@@ -1,7 +1,0 @@
-$TOOL put img.dsk host/NEW.TXT --json
-$TOOL rm img.dsk README.TXT --json
-$TOOL mv img.dsk README.TXT OTHER.TXT --json
-$TOOL attr img.dsk README.TXT --set write=true --json
-$TOOL title img.dsk NEWNAME --json
-$TOOL new img-new.dsk --format=flex40 --json
-$TOOL new --list --json

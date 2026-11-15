@@ -1,0 +1,12 @@
+$TOOL put img.dsk host/NEW.TXT / --json
+$TOOL rm img.dsk README.TXT --json
+$TOOL mv img.dsk NEW.TXT OTHER.TXT --json
+$TOOL attr img.dsk OTHER.TXT --set write=true --set catalog=true --json
+$TOOL title img.dsk NEWNAME --json
+$TOOL copy img2.dsk img.dsk RAN300.DAT --json
+$TOOL new img-new.dsk --format=flex-40x10 --title=BLANK --json
+$TOOL new img-new2.dsk --format=flex40 --json
+$TOOL new --list --json
+$TOOL ls img.dsk --json
+$TOOL info img-new.dsk --json
+$TOOL check img.dsk --json

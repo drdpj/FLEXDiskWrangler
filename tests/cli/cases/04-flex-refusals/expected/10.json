@@ -1,0 +1,23 @@
+{
+    "changes": [
+    ],
+    "command": "attr",
+    "dryRun": false,
+    "error": {
+        "code": 2,
+        "kind": "usage",
+        "message": "attribute 'random' can't be changed",
+        "path": null
+    },
+    "exit": 2,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

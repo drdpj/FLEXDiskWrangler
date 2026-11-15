@@ -1,0 +1,26 @@
+{
+    "changes": [
+        {
+            "from": null,
+            "note": "write=true catalog=true",
+            "op": "attr",
+            "path": "/OTHER.TXT",
+            "vol": "FLEX"
+        }
+    ],
+    "command": "attr",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "changed": 1
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

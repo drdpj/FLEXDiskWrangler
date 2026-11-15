@@ -1,0 +1,13 @@
+# what FLEX refuses: an empty file, a name that exists, a protected file deleted or renamed, more than the disc holds,
+# a random file whose map would need more than 168 runs, a volume name over 8 characters, the random flag changed
+$TOOL put img.dsk host/EMPTY.TXT / --json
+$TOOL put img.dsk host/README.TXT / --json
+$TOOL rm img.dsk PROG.CMD --json
+$TOOL rm img.dsk HIDDEN.SYS --json
+$TOOL mv img.dsk PROG.CMD X.CMD --json
+$TOOL mv img.dsk README.TXT DATA.RAN --json
+$TOOL put img.dsk host/big.bin / --json
+$TOOL copy img-random.dsk img-frag.dsk RAN200.DAT --json
+$TOOL title img.dsk NINECHARS --json
+$TOOL attr img.dsk DATA.RAN --set random=false --json
+$TOOL put img.dsk host/README.TXT / --replace --json

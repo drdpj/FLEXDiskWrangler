@@ -1,0 +1,152 @@
+{
+    "changes": [
+    ],
+    "command": "ls",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "entries": [
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": false,
+                    "delete": false,
+                    "random": true,
+                    "read": false,
+                    "sectors": 302,
+                    "write": false
+                },
+                "created": null,
+                "display": "/RAN300.DAT",
+                "kind": "file",
+                "modified": "1976-07-04T00:00:00",
+                "name": "RAN300.DAT",
+                "path": [
+                    "RAN300.DAT"
+                ],
+                "problem": null,
+                "size": 75600,
+                "sizeExact": false
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": false,
+                    "delete": true,
+                    "random": false,
+                    "read": false,
+                    "sectors": 12,
+                    "write": true
+                },
+                "created": null,
+                "display": "/PROG.CMD",
+                "kind": "file",
+                "modified": "1999-12-31T00:00:00",
+                "name": "PROG.CMD",
+                "path": [
+                    "PROG.CMD"
+                ],
+                "problem": null,
+                "size": 3024,
+                "sizeExact": false
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": true,
+                    "delete": false,
+                    "random": false,
+                    "read": false,
+                    "sectors": 1,
+                    "write": true
+                },
+                "created": null,
+                "display": "/OTHER.TXT",
+                "kind": "file",
+                "modified": "2026-11-15T00:00:00",
+                "name": "OTHER.TXT",
+                "path": [
+                    "OTHER.TXT"
+                ],
+                "problem": null,
+                "size": 252,
+                "sizeExact": false
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": false,
+                    "delete": false,
+                    "random": true,
+                    "read": false,
+                    "sectors": 13,
+                    "write": false
+                },
+                "created": null,
+                "display": "/DATA.RAN",
+                "kind": "file",
+                "modified": "2001-06-01T00:00:00",
+                "name": "DATA.RAN",
+                "path": [
+                    "DATA.RAN"
+                ],
+                "problem": null,
+                "size": 2772,
+                "sizeExact": false
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": false,
+                    "delete": false,
+                    "random": false,
+                    "read": false,
+                    "sectors": 1,
+                    "write": false
+                },
+                "created": null,
+                "display": "/EMPTY",
+                "kind": "file",
+                "modified": null,
+                "name": "EMPTY",
+                "path": [
+                    "EMPTY"
+                ],
+                "problem": null,
+                "size": 252,
+                "sizeExact": false
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": true,
+                    "delete": false,
+                    "random": false,
+                    "read": true,
+                    "sectors": 3,
+                    "write": false
+                },
+                "created": null,
+                "display": "/HIDDEN.SYS",
+                "kind": "file",
+                "modified": "1983-01-02T00:00:00",
+                "name": "HIDDEN.SYS",
+                "path": [
+                    "HIDDEN.SYS"
+                ],
+                "problem": null,
+                "size": 756,
+                "sizeExact": false
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

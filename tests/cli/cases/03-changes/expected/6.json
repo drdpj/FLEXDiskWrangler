@@ -1,0 +1,31 @@
+{
+    "changes": [
+        {
+            "from": "/RAN300.DAT",
+            "note": null,
+            "op": "add",
+            "path": "/RAN300.DAT",
+            "vol": "FLEX"
+        }
+    ],
+    "command": "copy",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "added": 1,
+        "dirs": 0,
+        "renamed": [
+        ],
+        "replaced": 0,
+        "skipped": 0
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

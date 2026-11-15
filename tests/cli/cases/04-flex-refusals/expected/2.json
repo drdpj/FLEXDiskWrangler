@@ -1,0 +1,29 @@
+{
+    "changes": [
+    ],
+    "command": "put",
+    "dryRun": false,
+    "error": {
+        "code": 5,
+        "kind": "conflict",
+        "message": "/README.TXT exists: use --replace or --skip",
+        "path": "/README.TXT"
+    },
+    "exit": 5,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+        "added": 0,
+        "dirs": 0,
+        "renamed": [
+        ],
+        "replaced": 0,
+        "skipped": 0
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

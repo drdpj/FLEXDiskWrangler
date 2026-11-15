@@ -1,0 +1,29 @@
+{
+    "changes": [
+    ],
+    "command": "put",
+    "dryRun": false,
+    "error": {
+        "code": 1,
+        "kind": "failed",
+        "message": "/BIG.BIN: there isn't room for BIG.BIN: it needs 397 sectors, and 352 are free",
+        "path": "/BIG.BIN"
+    },
+    "exit": 1,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+        "added": 0,
+        "dirs": 0,
+        "renamed": [
+        ],
+        "replaced": 0,
+        "skipped": 0
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

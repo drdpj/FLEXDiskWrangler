@@ -1,0 +1,26 @@
+{
+    "changes": [
+        {
+            "from": null,
+            "note": null,
+            "op": "remove",
+            "path": "/README.TXT",
+            "vol": "FLEX"
+        }
+    ],
+    "command": "rm",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "removed": 1
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

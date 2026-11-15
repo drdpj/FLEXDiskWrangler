@@ -65,9 +65,9 @@
                     "contiguousOnly": false,
                     "dates": true,
                     "dirs": false,
-                    "maxEntriesPerDir": 320,
+                    "maxEntriesPerDir": -1,
                     "namespaces": false,
-                    "rename": false,
+                    "rename": true,
                     "renameAcrossDirs": false,
                     "settableDates": false,
                     "title": true
@@ -78,7 +78,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "write",
                         "label": "Write-protected",
                         "type": "bool"
@@ -88,7 +88,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "delete",
                         "label": "Delete-protected",
                         "type": "bool"
@@ -98,7 +98,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "read",
                         "label": "Read-protected",
                         "type": "bool"
@@ -108,7 +108,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "catalog",
                         "label": "Catalogue-protected",
                         "type": "bool"
@@ -143,8 +143,8 @@
                     "total": 353808
                 },
                 "label": "FLEX",
-                "readOnly": true,
-                "readOnlyWhy": "this version of FLEX Disk Wrangler only reads FLEX discs",
+                "readOnly": false,
+                "readOnlyWhy": null,
                 "vol": "flex",
                 "volumeAttrSpecs": [
                     {
@@ -152,7 +152,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "label",
                         "label": "Volume name",
                         "type": "text"
@@ -162,7 +162,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "number",
                         "label": "Volume number",
                         "type": "int"

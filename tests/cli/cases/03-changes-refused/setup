@@ -1,3 +1,0 @@
-python3 -I "$TESTS/flex_check.py" make syn
-cp syn/basic.dsk img.dsk
-mkdir -p host; printf 'hello\r' > host/NEW.TXT

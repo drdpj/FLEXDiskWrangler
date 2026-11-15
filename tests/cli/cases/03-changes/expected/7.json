@@ -1,0 +1,30 @@
+{
+    "changes": [
+        {
+            "from": null,
+            "note": "flex-40x10",
+            "op": "new",
+            "path": "img-new.dsk",
+            "vol": ""
+        }
+    ],
+    "command": "new",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img-new.dsk",
+    "ok": true,
+    "result": {
+        "file": "img-new.dsk",
+        "format": "flex-40x10",
+        "volumes": [
+            "flex"
+        ]
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

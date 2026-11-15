@@ -1,0 +1,27 @@
+{
+    "changes": [
+        {
+            "from": "/NEW.TXT",
+            "note": null,
+            "op": "rename",
+            "path": "/OTHER.TXT",
+            "vol": "FLEX"
+        }
+    ],
+    "command": "mv",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "from": "/NEW.TXT",
+        "to": "/OTHER.TXT"
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

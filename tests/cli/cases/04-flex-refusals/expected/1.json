@@ -1,0 +1,29 @@
+{
+    "changes": [
+    ],
+    "command": "put",
+    "dryRun": false,
+    "error": {
+        "code": 1,
+        "kind": "failed",
+        "message": "/EMPTY.TXT: EMPTY.TXT is empty: FLEX can't hold an empty file",
+        "path": "/EMPTY.TXT"
+    },
+    "exit": 1,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+        "added": 0,
+        "dirs": 0,
+        "renamed": [
+        ],
+        "replaced": 0,
+        "skipped": 0
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

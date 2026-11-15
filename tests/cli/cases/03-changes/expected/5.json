@@ -1,0 +1,27 @@
+{
+    "changes": [
+        {
+            "from": null,
+            "note": "NEWNAME",
+            "op": "title",
+            "path": "",
+            "vol": "FLEX"
+        }
+    ],
+    "command": "title",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "key": "label",
+        "title": "NEWNAME"
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

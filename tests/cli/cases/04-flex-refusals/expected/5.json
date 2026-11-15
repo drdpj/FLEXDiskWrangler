@@ -1,0 +1,23 @@
+{
+    "changes": [
+    ],
+    "command": "mv",
+    "dryRun": false,
+    "error": {
+        "code": 1,
+        "kind": "failed",
+        "message": "/PROG.CMD: PROG.CMD is write-protected",
+        "path": "/PROG.CMD"
+    },
+    "exit": 1,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}
