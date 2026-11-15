@@ -128,23 +128,8 @@ static void basic(const QString &dir, const QString &work) {
     CHECK(r.value("flex").value("writeProtect").toBool() && r.value("flex").value("deleteProtect").toBool() && !r.value("flex").value("random").toBool(),
           "retro-files family flex");
 
-    printf("changes are refused, and leave nothing behind\n");
-    const QString before = describe(*od.disk());
-    dw::fs::Disc &disc = od.disc();
-    const auto refused = [&](const char *what, const std::function<bool(QString *)> &f) {
-        QString e2;
-        const bool ok = disc.transact(f, &e2);
-        CHECK(!ok && e2 == Flex::FlexVolume::ReadOnlyText && !od.dirty(), QString(what) + " refused: " + e2);
-    };
-    refused("write", [&](QString *e2) { return v->write(Path(), "NEW.TXT", "x", {}, QDateTime(), false, e2); });
-    refused("remove", [&](QString *e2) { return v->remove(Path({"README.TXT"}), e2); });
-    refused("rename", [&](QString *e2) { return v->rename(Path({"README.TXT"}), Path({"OTHER.TXT"}), e2); });
-    refused("setAttrs", [&](QString *e2) { return v->setAttrs(Path({"README.TXT"}), {{"write", true}}, e2); });
-    refused("setVolumeAttrs", [&](QString *e2) { return v->setVolumeAttrs({{"label", "X"}}, e2); });
-    CHECK(od.readOnlyWhy(0) == Flex::FlexVolume::ReadOnlyText, "read-only: " + od.readOnlyWhy(0));
-    CHECK(v->reload(&err) && describe(*od.disk()) == before, "a reload gives the same state");
-
     printf("Save As: a copy, byte for byte, read back\n");
+    const QString before = describe(*od.disk());
     const QString copy = work + "/basic-copy.dsk";
     QFile::remove(copy);
     CHECK(od.saveAs(copy, dw::device::Kind::Raw, &err), "saved as a raw copy: " + err);
@@ -152,6 +137,167 @@ static void basic(const QString &dir, const QString &work) {
     CHECK(!od.saveAs(work + "/basic.imd", dw::device::Kind::Imd, &err), "ImageDisk refused: " + err);
     Flex::OpenedDisc od2;
     CHECK(openDisc(copy, &od2, &err) && describe(*od2.disk()) == before, "the copy reads the same");
+}
+
+// The whole disc as staged: what a failed transaction must leave exactly as it was.
+static QByteArray staged(const Flex::OpenedDisc &od) {
+    QByteArray b;
+    QString err;
+    od.disk()->linear().read(0, od.disk()->linear().size(), &b, &err);
+    return b;
+}
+
+static void changes(const QString &dir, const QString &work) {
+    printf("changes, as FLEX makes them (the bytes are flex_check.py writes'; here the volume, transactions, reload, saving)\n");
+    const QString path = work + "/changes.dsk";
+    QFile::remove(path);
+    QFile::copy(dir + "/basic.dsk", path);
+    Flex::OpenedDisc od;
+    QString err;
+    CHECK(openDisc(path, &od, &err) && od.readOnlyWhy(0).isEmpty(), "basic.dsk opens writable: " + od.readOnlyWhy(0));
+    if (!od.disk()) return;
+    dw::fs::Disc &disc = od.disc();
+    dw::fs::Volume *v = disc.volume(0);
+    // each change in a transaction; afterwards the disc checks clean and a reload gives exactly the state left
+    const auto change = [&](const QString &what, const std::function<bool(QString *)> &f) {
+        QString e;
+        const bool ok = disc.transact(f, &e);
+        const QString after = describe(*od.disk());
+        QString re;
+        CHECK(ok && v->check().ok() && v->reload(&re) && describe(*od.disk()) == after, what + (ok ? QString() : ": " + e));
+    };
+    // a change that fails leaves the staged disc and the state as they were
+    const auto refused = [&](const QString &what, const QString &want, const std::function<bool(QString *)> &f) {
+        const QByteArray bytes = staged(od);
+        const QString state = describe(*od.disk());
+        QString e;
+        const bool ok = disc.transact(f, &e);
+        CHECK(!ok && e.contains(want) && staged(od) == bytes && describe(*od.disk()) == state, what + " refused: " + e);
+    };
+    const QByteArray note = QByteArray("a note\r").repeated(60);
+    change("write NOTE.TXT", [&](QString *e) { return v->write(Path(), "note.txt", note, {}, QDateTime(QDate(1984, 3, 20), QTime(12, 0)), false, e); });
+    dw::fs::Entry en;
+    QByteArray back;
+    CHECK(v->stat(Path({"NOTE.TXT"}), &en, &err) && en.modified.date() == QDate(1984, 3, 20) && en.attrs["sectors"].toInt() == 2,
+          "NOTE.TXT: upper case on the disc, its own date, 2 sectors");
+    CHECK(v->read(Path({"NOTE.TXT"}), &back, &err) && back.left(note.size()) == note && back.mid(note.size()) == QByteArray(back.size() - note.size(), '\0'),
+          "read back: the data, then zeros to the end of the sector");
+    CHECK(od.disk()->files()[2].name == "NOTE.TXT", "in the deleted entry's slot (the first deleted or never-used one)");
+    refused("an empty file", "FLEX can't hold an empty file", [&](QString *e) { return v->write(Path(), "E.TXT", QByteArray(), {}, QDateTime(), false, e); });
+    refused("a name that exists", "already exists", [&](QString *e) { return v->write(Path(), "NOTE.TXT", "x", {}, QDateTime(), false, e); });
+    refused("a bad name", "starts with a letter", [&](QString *e) { return v->write(Path(), "1X.TXT", "x", {}, QDateTime(), false, e); });
+    refused("more than the disc holds", "there isn't room", [&](QString *e) {
+        return v->write(Path(), "HUGE.BIN", QByteArray(400 * Flex::DataBytes, 'h'), {}, QDateTime(), false, e); });
+    refused("deleting a write-protected file", "write-protected", [&](QString *e) { return v->remove(Path({"PROG.CMD"}), e); });
+    refused("renaming a read-protected file", "read-protected", [&](QString *e) { return v->rename(Path({"HIDDEN.SYS"}), Path({"H.SYS"}), e); });
+    refused("replacing a protected file", "write-protected", [&](QString *e) { return v->write(Path(), "PROG.CMD", "x", {}, QDateTime(), true, e); });
+    refused("renaming onto another file", "already exists", [&](QString *e) { return v->rename(Path({"NOTE.TXT"}), Path({"README.TXT"}), e); });
+    refused("changing the random-access flag", "can't be changed", [&](QString *e) { return v->setAttrs(Path({"DATA.RAN"}), {{"random", false}}, e); });
+    refused("a volume name of 9 characters", "up to 8", [&](QString *e) { return v->setVolumeAttrs({{"label", "NINECHARS"}}, e); });
+
+    // a random file copied: its data read without the map, written with a new one, read back the same
+    QByteArray ran;
+    v->read(Path({"DATA.RAN"}), &ran, &err);
+    change("write COPY.RAN as a random file", [&](QString *e) {
+        return v->write(Path(), "COPY.RAN", ran, {{"random", true}, {"write", true}}, QDateTime(QDate(2001, 6, 1), QTime()), false, e); });
+    QByteArray ran2;
+    CHECK(v->read(Path({"COPY.RAN"}), &ran2, &err) && ran2 == ran && v->stat(Path({"COPY.RAN"}), &en, &err) &&
+          en.attrs["random"].toBool() && en.attrs["write"].toBool() && en.attrs["sectors"].toInt() == 13 && v->check().warnings.isEmpty(),
+          "COPY.RAN: the same data, random, write-protected, 13 sectors, its map lists its chain");
+    const Flex::File readme = od.disk()->files()[od.disk()->indexOf("README.TXT")];
+    const int freeBefore = od.disk()->sir().freeCount;
+    change("delete README.TXT", [&](QString *e) { return v->remove(Path({"README.TXT"}), e); });
+    CHECK(od.disk()->sir().lastFree == readme.end && od.disk()->sir().freeCount == freeBefore + readme.sectors,
+          QString("its chain is at the end of the free chain: the last free sector is its last, %1, and %2 more are free")
+              .arg(readme.end.toString()).arg(readme.sectors));
+    change("rename NOTE.TXT to LETTER", [&](QString *e) { return v->rename(Path({"NOTE.TXT"}), Path({"letter"}), e); });
+    CHECK(od.disk()->indexOf("LETTER") >= 0 && od.disk()->indexOf("NOTE.TXT") < 0, "renamed, upper case, no extension");
+    change("protect LETTER (catalogue, delete)", [&](QString *e) { return v->setAttrs(Path({"LETTER"}), {{"catalog", true}, {"delete", true}}, e); });
+    CHECK(v->stat(Path({"LETTER"}), &en, &err) && en.attrs["catalog"].toBool() && en.attrs["delete"].toBool() && !en.attrs["write"].toBool(),
+          "LETTER: C and D set");
+    change("unprotect PROG.CMD", [&](QString *e) { return v->setAttrs(Path({"PROG.CMD"}), {{"write", false}, {"delete", false}}, e); });
+    change("replace PROG.CMD", [&](QString *e) { return v->write(Path(), "PROG.CMD", "new", {}, QDateTime(QDate(2026, 11, 15), QTime()), true, e); });
+    CHECK(v->stat(Path({"PROG.CMD"}), &en, &err) && en.attrs["sectors"].toInt() == 1 && !en.attrs["write"].toBool(), "PROG.CMD replaced: one sector");
+    const QByteArray tag = staged(od).mid(2 * 256 + 0x18, 3);
+    change("volume name and number", [&](QString *e) { return v->setVolumeAttrs({{"label", "Disc 2"}, {"number", 7}}, e); });
+    CHECK(v->volumeValues().value("label").toString() == "Disc 2" && v->volumeValues().value("number").toInt() == 7 &&
+          staged(od).mid(2 * 256 + 0x18, 3) == tag, "name \"Disc 2\" as typed, number 7, SIR $18-$1A kept");
+
+    printf("saving: the checked save, read back\n");
+    const QString state = describe(*od.disk());
+    CHECK(od.save(false, &err), "saved: " + err);
+    Flex::OpenedDisc od2;
+    CHECK(openDisc(path, &od2, &err) && describe(*od2.disk()) == state && od2.disc().volume(0)->check().ok(), "reopened: the same state, no errors");
+
+    printf("the directory grows (full.dsk)\n");
+    QFile::remove(work + "/full.dsk");
+    QFile::copy(dir + "/full.dsk", work + "/full.dsk");
+    Flex::OpenedDisc of;
+    CHECK(openDisc(work + "/full.dsk", &of, &err) && of.disk()->freeSlots() == 0, "full.dsk: no free slot");
+    if (of.disk()) {
+        const int dirs = of.disk()->dirSectors().size();
+        QString e;
+        CHECK(of.disc().transact([&](QString *e2) { return of.disc().volume(0)->write(Path(), "MORE.TXT", "more", {}, QDateTime(), false, e2); }, &e) &&
+              of.disk()->dirSectors().size() == dirs + 1 && of.disk()->freeSlots() == 9 && of.disc().volume(0)->check().ok(),
+              "a new file: one more directory sector, 9 slots free in it: " + e);
+    }
+}
+
+static void newDiscs(const QString &dir, const QString &work) {
+    printf("new discs: every preset, as NEWDISK lays a disc out (the bytes are flex_check.py writes')\n");
+    QString err;
+    for (const dw::fs::Preset &p : Flex::presets()) {
+        const QString path = work + "/" + p.id + ".dsk";
+        QFile::remove(path);
+        const int tracks = p.extra.value("tracks").toInt(), sectors = p.extra.value("sectors").toInt();
+        CHECK(Flex::createBlank(path, p, "NEW", 9, QDate(2026, 11, 15), QByteArray(), &err), p.id + " made: " + err);
+        const dw::fs::Verdict vd = verdictOf(path);
+        Flex::OpenedDisc od;
+        CHECK(QFileInfo(path).size() == qint64(p.bytes) && vd.bestCandidate() && vd.bestCandidate()->tier == dw::fs::Tier::Certain &&
+              openDisc(path, &od, &err) && od.readOnlyWhy(0).isEmpty(), p.id + ": FLEX, certain, writable");
+        if (!od.disk()) continue;
+        const Flex::Sir &s = od.disk()->sir();
+        CHECK(s.labelText() == "NEW" && s.volumeNumber == 9 && s.date() == QDate(2026, 11, 15) && s.freeCount == (tracks - 1) * sectors &&
+              s.firstFree == Flex::TS(1, 1) && s.lastFree == Flex::TS(tracks - 1, sectors) && od.disk()->dirSectors().size() == sectors - 4 &&
+              od.disk()->files().isEmpty() && !od.disk()->hasLoader(), p.id + ": SIR, free chain, empty directory, no loader");
+        const dw::fs::Report r = od.disc().volume(0)->check();
+        CHECK(r.ok() && r.warnings.isEmpty(), p.id + ": no problems");
+    }
+    const dw::fs::Preset *p = Flex::findPreset("flex-40x10");
+    CHECK(p && !Flex::findPreset("flex40") && !Flex::findPreset("dfs-ss40"), "presets found by id, only FLEX's");
+    CHECK(!Flex::createBlank(work + "/x.dsk", *p, "TOO LONG NAME", 0, QDate(), QByteArray(), &err), "a name over 8 characters refused: " + err);
+
+    printf("the boot loader: copied from another disc, linked\n");
+    // a disc with a "loader": a new disc whose sectors 1 and 2 are given some bytes, linked to 3/4
+    const QString withLoader = work + "/loader.dsk";
+    QFile::remove(withLoader);
+    QByteArray loader;
+    for (int i = 0; i < 512; ++i) loader.append(char(i * 7 + 1));
+    Flex::OpenedDisc src;
+    if (Flex::createBlank(withLoader, *p, "SYSTEM", 1, QDate(), QByteArray(), &err) && openDisc(withLoader, &src, &err)) {
+        CHECK(src.disc().transact([&](QString *e) { return src.disk()->setBootSectors(loader, Flex::TS(3, 4), e); }, &err) &&
+              src.save(false, &err) && src.disk()->bootLink() == Flex::TS(3, 4), "a loader put on loader.dsk, linked to 3/4");
+    }
+    QByteArray got;
+    CHECK(Flex::readBootLoader(withLoader, &got, &err) && got.size() == 512 && got.mid(7) == loader.mid(7) && got.left(5) == loader.left(5),
+          "read from loader.dsk: sectors 1 and 2 (bytes 5-6 its link)");
+    CHECK(!Flex::readBootLoader(dir + "/basic.dsk", &got, &err) && err.contains("no boot loader"), "basic.dsk has none: " + err);
+    CHECK(!Flex::readBootLoader(dir + "/os9.dsk", &got, &err) && err.contains("isn't a FLEX disc"), "os9.dsk isn't FLEX: " + err);
+    QByteArray boot;
+    Flex::readBootLoader(withLoader, &boot, &err);
+    const QString made = work + "/booted.dsk";
+    QFile::remove(made);
+    Flex::OpenedDisc od;
+    CHECK(Flex::createBlank(made, *p, "BOOT", 2, QDate(), boot, &err) && openDisc(made, &od, &err) && od.disk()->hasLoader() &&
+          od.disk()->bootLink().isNull(), "a new disc with that loader, not linked");
+    if (od.disk()) {
+        QByteArray b;
+        od.disk()->bootSectors(&b, &err);
+        CHECK(b.mid(7) == loader.mid(7) && b.left(5) == loader.left(5), "the loader's bytes copied as they are");
+        CHECK(od.disc().transact([&](QString *e) { return od.disc().volume(0)->write(Path(), "FLEX.SYS", QByteArray(3000, 's'), {}, QDateTime(), false, e)
+                                                       && od.disk()->setBootLink(od.disk()->files()[0].start, e); }, &err) &&
+              od.disk()->bootLink() == Flex::TS(1, 1), "FLEX.SYS added and linked: the loader points at 1/1");
+    }
 }
 
 static void faults(const QString &dir) {
@@ -169,8 +315,11 @@ static void faults(const QString &dir) {
         CHECK(!r.ok() && r.errors.join("\n").contains(text), file + ": " + r.errors.value(0));
         CHECK(od.readOnlyWhy(0) == "the disc has errors (Tools > Check disc)", file + ": read-only for its errors");
     }
-    Flex::OpenedDisc od;
+    Flex::OpenedDisc os;
     QString err;
+    CHECK(openDisc(dir + "/short.dsk", &os, &err) && (!os.disc().volume(0)->check().ok() || os.readOnlyWhy(0) == Flex::OpenedDisc::GeometryText),
+          "short.dsk (shorter than its SIR says): read-only: " + os.readOnlyWhy(0));
+    Flex::OpenedDisc od;
     CHECK(openDisc(dir + "/bad-chain.dsk", &od, &err), "bad-chain.dsk opened");
     if (!od.disk()) return;
     QVector<dw::fs::Entry> es;
@@ -197,7 +346,7 @@ static void names() {
 
 static void samples(const QString &dir) {
     printf("the sample discs (%s)\n", qPrintable(dir));
-    const QStringList damaged = {"C009.DSK", "FLX503TX.DSK"};
+    const QStringList damaged = {"C009.DSK", "FLX503TX.DSK", "FLEX2-01.dsk"};
     const QStringList foreign = {"C012_1.DSK", "C014.DSK", "C014.DSK.CORRUPTED", "C022.DSK", "C022_1.DSK"};
     int flex = 0;
     for (const QString &f : QDir(dir).entryList(QDir::Files, QDir::Name)) {
@@ -214,12 +363,34 @@ static void samples(const QString &dir) {
         if (!od.disk()) continue;
         flex++;
         const dw::fs::Report r = od.disc().volume(0)->check();
-        if (damaged.contains(f)) CHECK(!r.ok(), f + ": " + r.errors.value(0));
-        else CHECK(r.ok() && od.readOnlyWhy(0) == Flex::FlexVolume::ReadOnlyText, f + ": no errors");
+        if (damaged.contains(f)) {
+            CHECK(!r.ok() && !od.readOnlyWhy(0).isEmpty(), f + ": read-only for its errors: " + r.errors.value(0));
+            continue;
+        }
+        CHECK(r.ok() && od.readOnlyWhy(0).isEmpty(), f + ": no errors, writable");
         const QString before = describe(*od.disk());
         CHECK(od.disk()->reload(&err) && describe(*od.disk()) == before, f + ": a reload gives the same state");
+        // a change on a copy: a file added and the first unprotected one deleted, checked, saved and read back
+        const QString copy = QDir::temp().filePath("flexvoltest/sample-" + f);
+        QFile::remove(copy);
+        QFile::copy(p, copy);
+        QFile(copy).setPermissions(QFile::ReadOwner | QFile::WriteOwner);
+        Flex::OpenedDisc oc;
+        if (!openDisc(copy, &oc, &err)) continue;
+        dw::fs::Volume *ov = oc.disc().volume(0);
+        QString victim;
+        for (const Flex::File &k : oc.disk()->files()) if (!(k.attr & 0xE0)) { victim = k.name; break; }
+        const bool ok = oc.disc().transact([&](QString *e) {
+            return ov->write(Path(), "ADDED.TXT", QByteArray("added by voltest\r").repeated(50), {}, QDateTime(QDate(2026, 11, 15), QTime()), false, e) &&
+                   (victim.isEmpty() || ov->remove(Path({victim}), e));
+        }, &err);
+        const QString state = describe(*oc.disk());
+        Flex::OpenedDisc again;
+        CHECK(ok && ov->check().ok() && oc.save(false, &err) && openDisc(copy, &again, &err) && describe(*again.disk()) == state,
+              f + ": ADDED.TXT added, " + victim + " deleted, saved and read back: " + err);
+        QFile::remove(copy);
     }
-    CHECK(flex == 15, QString("%1 FLEX discs").arg(flex));
+    CHECK(flex == 17, QString("%1 FLEX discs").arg(flex));
 }
 
 int main(int argc, char **argv) {
@@ -230,6 +401,8 @@ int main(int argc, char **argv) {
     QDir().mkpath(work);
     detection(dir);
     basic(dir, work);
+    changes(dir, work);
+    newDiscs(dir, work);
     faults(dir);
     names();
     if (argc > 2) samples(QString::fromLocal8Bit(argv[2]));

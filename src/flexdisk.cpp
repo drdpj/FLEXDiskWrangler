@@ -310,4 +310,358 @@ dw::fs::Report Disk::check() const {
     return r;
 }
 
+// ------------------------------------------------------------------------------------------------ writing
+// Each step is FLEX's (docs/disc-format.md, "How FLEX writes"; the labels are those of the FMS source, which are TSC
+// FLEX 9.0's addresses; FLEX 2.0 does the same at its own).
+
+static void putTS(QByteArray *b, int off, const TS &ts) { (*b)[off] = char(ts.t); (*b)[off + 1] = char(ts.s); }
+static void putU16(QByteArray *b, int off, int v) { (*b)[off] = char((v >> 8) & 0xFF); (*b)[off + 1] = char(v & 0xFF); }
+
+bool Disk::writeSector(const TS &ts, const QByteArray &data, QString *err) {
+    if (!inRange(ts)) { *err = QString("sector %1 is not on the disc").arg(ts.toString()); return false; }
+    if (data.size() != SectorSize) { *err = "a sector is 256 bytes"; return false; }
+    return m_disc.write(offsetOf(ts), data, err);
+}
+
+// The free list as the FMS keeps it, written back into the SIR ($1D-$22) and nothing else of it (LD94A).
+bool Disk::writeSirFree(QString *err) {
+    QByteArray s;
+    if (!readSector(TS(0, SirSector), &s, err)) return false;
+    putTS(&s, 0x1D, m_sir.firstFree);
+    putTS(&s, 0x1F, m_sir.lastFree);
+    putU16(&s, 0x21, m_sir.freeCount);
+    return writeSector(TS(0, SirSector), s, err);
+}
+
+// LD79A: the first free sector. Its link is the new first free sector and the count goes down by one; when its link is
+// 0/0 the first free, the last free and the count all become 0. The caller writes the sector (cleared, numbered).
+bool Disk::takeSector(TS *out, QString *err) {
+    if (m_sir.firstFree.isNull()) { *err = "the disc is full: no free sectors are left"; return false; }
+    const TS ts = m_sir.firstFree;
+    QByteArray b;
+    if (!readSector(ts, &b, err)) return false;
+    const TS next = tsAt(b, 0);
+    if (next.isNull()) {
+        m_sir.firstFree = m_sir.lastFree = TS();
+        m_sir.freeCount = 0;
+    } else {
+        m_sir.firstFree = next;
+        m_sir.freeCount = (m_sir.freeCount - 1) & 0xFFFF;
+    }
+    *out = ts;
+    return true;
+}
+
+bool Disk::entrySlot(const File &f, TS *sector, int *index) const {
+    if (f.slot < 0 || f.slot / EntriesPerDirSector >= m_dirSectors.size()) return false;
+    *sector = m_dirSectors[f.slot / EntriesPerDirSector];
+    *index = f.slot % EntriesPerDirSector;
+    return true;
+}
+
+bool Disk::writeEntry(const TS &sector, int index, const QByteArray &entry, QString *err) {
+    if (entry.size() != EntrySize) { *err = "a directory entry is 24 bytes"; return false; }
+    QByteArray b;
+    if (!readSector(sector, &b, err)) return false;
+    b.replace(16 + index * EntrySize, EntrySize, entry);
+    return writeSector(sector, b, err);
+}
+
+// What the FMS refuses before a delete or a rename: a write-protected file (error 11), a delete- or read-protected
+// one (error 12).
+const File *Disk::protectedFile(const QString &name, QString *err) const {
+    const int i = indexOf(name);
+    if (i < 0) { *err = "no such file: " + name; return nullptr; }
+    const File &f = m_files[i];
+    if (f.attr & WriteProtect) { *err = f.name + " is write-protected"; return nullptr; }
+    if (f.attr & DeleteProtect) { *err = f.name + " is delete-protected"; return nullptr; }
+    if (f.attr & ReadProtect) { *err = f.name + " is read-protected"; return nullptr; }
+    if (!f.problem.isEmpty()) { *err = f.name + ": " + f.problem; return nullptr; }
+    return &f;
+}
+
+static QByteArray storedName(const QString &name) {
+    const int dot = name.indexOf('.');
+    const QByteArray n = (dot < 0 ? name : name.left(dot)).toLatin1().left(8);
+    const QByteArray x = (dot < 0 ? QString() : name.mid(dot + 1)).toLatin1().left(3);
+    return n.leftJustified(8, '\0') + x.leftJustified(3, '\0');
+}
+
+static TS nextSector(const TS &ts, int sectors) { return ts.s < sectors ? TS(ts.t, ts.s + 1) : TS(ts.t + 1, 1); }
+
+static QByteArray mapRun(const TS &start, int count) {
+    QByteArray r(3, '\0');
+    r[0] = char(start.t);
+    r[1] = char(start.s);
+    r[2] = char(count);
+    return r;
+}
+
+// FMS open for write (LD9DD), the bytes written (LD715), close (LDAC8).
+bool Disk::writeFile(const QString &name, const QByteArray &data, quint8 attr, bool random, const QDate &date, QString *err) {
+    if (data.isEmpty()) { *err = name + " is empty: FLEX can't hold an empty file"; return false; }
+    if (indexOf(name) >= 0) { *err = name + " already exists"; return false; }
+    const int dataSectors = int((data.size() + DataBytes - 1) / DataBytes);
+    const int n = dataSectors + (random ? 2 : 0);
+
+    // The slot: FLEX's search (LD8D6) remembers the first deleted or never-used slot it meets, and stops at a
+    // never-used one; so it is the first slot that is either.
+    TS slotSector;
+    int slotIndex = -1;
+    for (const TS &ds : m_dirSectors) {
+        QByteArray b;
+        if (!readSector(ds, &b, err)) return false;
+        for (int i = 0; i < EntriesPerDirSector && slotIndex < 0; ++i) {
+            const quint8 first = uchar(b[16 + i * EntrySize]);
+            if (first == 0 || (first & 0x80)) { slotSector = ds; slotIndex = i; }
+        }
+        if (slotIndex >= 0) break;
+    }
+    const bool grow = slotIndex < 0;
+    if (n + (grow ? 1 : 0) > m_sir.freeCount) {
+        *err = QString("there isn't room for %1: it needs %2 sector%3%4, and %5 %6 free").arg(name).arg(n).arg(n == 1 ? "" : "s")
+                   .arg(grow ? " and one more for the directory" : "").arg(m_sir.freeCount).arg(m_sir.freeCount == 1 ? "is" : "are");
+        return false;
+    }
+    if (n > 0xFFFF) { *err = name + " is too large for a FLEX file"; return false; }
+
+    // No free slot: the directory grows by a sector from the free chain (LDA44), cleared, record number 1, linked from
+    // the last directory sector; the entry goes in its first slot.
+    if (grow) {
+        TS ns;
+        if (!takeSector(&ns, err)) return false;
+        QByteArray fresh(SectorSize, '\0');
+        putU16(&fresh, 2, 1);
+        if (!writeSector(ns, fresh, err)) return false;
+        QByteArray last;
+        if (!readSector(m_dirSectors.last(), &last, err)) return false;
+        putTS(&last, 0, ns);
+        if (!writeSector(m_dirSectors.last(), last, err)) return false;
+        slotSector = ns;
+        slotIndex = 0;
+    }
+
+    // The file's sectors, one at a time from the head of the free chain.
+    QVector<TS> secs;
+    for (int k = 0; k < n; ++k) {
+        TS ts;
+        if (!takeSector(&ts, err)) return false;
+        secs << ts;
+    }
+
+    // A random file's map (LDC48, LDC9D): runs of consecutive data sectors, a run ending at 255 sectors.
+    QVector<QByteArray> runs;
+    if (random) {
+        TS start = secs[2], prev = secs[2];
+        int count = 1;
+        for (int k = 3; k < n; ++k) {
+            if (secs[k] == nextSector(prev, m_sir.sectors) && count < 255) { count++; prev = secs[k]; continue; }
+            runs << mapRun(start, count);
+            start = prev = secs[k];
+            count = 1;
+        }
+        runs << mapRun(start, count);
+        if (runs.size() > MaxMapRuns) {
+            *err = QString("%1 can't be a random file here: its sectors would lie in %2 separate runs, and FLEX's map holds %3")
+                       .arg(name).arg(runs.size()).arg(MaxMapRuns);
+            return false;
+        }
+    }
+
+    // Each sector cleared, numbered (a random file's map 0, its data from 1; a sequential file's from 1), linked to the
+    // next one taken, the last to 0/0.
+    for (int k = 0; k < n; ++k) {
+        QByteArray s(SectorSize, '\0');
+        putTS(&s, 0, k + 1 < n ? secs[k + 1] : TS());
+        const int dataIndex = random ? k - 2 : k;
+        putU16(&s, 2, dataIndex < 0 ? 0 : dataIndex + 1);
+        if (dataIndex >= 0) {
+            const QByteArray chunk = data.mid(dataIndex * DataBytes, DataBytes);
+            s.replace(4, chunk.size(), chunk);
+        } else {
+            for (int r = 0; r < MapRunsPerSector; ++r) {
+                const int i = k * MapRunsPerSector + r;
+                if (i < runs.size()) s.replace(4 + 3 * r, 3, runs[i]);
+            }
+        }
+        if (!writeSector(secs[k], s, err)) return false;
+    }
+
+    // The entry (written by FLEX at open and again at close): name, attributes, both reserved bytes 0, first and last
+    // sector, the count, the random flag (FLEX writes 2), the date.
+    QByteArray e = storedName(name);
+    e.append(char(attr & ProtectionBits));
+    e.append('\0');
+    QByteArray tail(EntrySize - 13, '\0');                 // bytes 13-23
+    putTS(&tail, 0, secs.first());
+    putTS(&tail, 2, secs.last());
+    putU16(&tail, 4, n);
+    tail[6] = char(random ? 2 : 0);
+    if (date.isValid()) {
+        tail[8] = char(date.month());
+        tail[9] = char(date.day());
+        tail[10] = char(date.year() % 100);
+    }
+    e.append(tail);
+    if (!writeEntry(slotSector, slotIndex, e, err)) return false;
+    if (!writeSirFree(err)) return false;
+    return reload(err);
+}
+
+// FMS delete (LDBDB).
+bool Disk::deleteFile(const QString &name, QString *err) {
+    const File *p = protectedFile(name, err);
+    if (!p) return false;
+    const File f = *p;
+    if (!f.start.isNull()) {
+        if (m_sir.lastFree.isNull()) {
+            m_sir.firstFree = f.start;                       // the free chain was empty: the file's chain becomes it
+        } else {
+            QByteArray last;                                 // the last free sector now links to the file's first
+            if (!readSector(m_sir.lastFree, &last, err)) return false;
+            putTS(&last, 0, f.start);
+            if (!writeSector(m_sir.lastFree, last, err)) return false;
+        }
+        m_sir.lastFree = f.end;
+        m_sir.freeCount = (m_sir.freeCount + f.sectors) & 0xFFFF;
+    }
+    TS ds;
+    int i;
+    if (!entrySlot(f, &ds, &i)) { *err = "the directory has changed"; return false; }
+    QByteArray b;
+    if (!readSector(ds, &b, err)) return false;
+    b[16 + i * EntrySize] = char(0xFF);                      // LDBAC: the first byte, the rest of the entry kept
+    if (!writeSector(ds, b, err)) return false;
+    if (!writeSirFree(err)) return false;
+    return reload(err);
+}
+
+// FMS rename (LDB31): the entry rewritten in its own slot with the new name; nothing else changes.
+bool Disk::renameFile(const QString &from, const QString &to, QString *err) {
+    const File *p = protectedFile(from, err);
+    if (!p) return false;
+    const File f = *p;
+    if (indexOf(to) >= 0) { *err = to + " already exists"; return false; }
+    TS ds;
+    int i;
+    if (!entrySlot(f, &ds, &i)) { *err = "the directory has changed"; return false; }
+    QByteArray b;
+    if (!readSector(ds, &b, err)) return false;
+    b.replace(16 + i * EntrySize, 11, storedName(to));
+    if (!writeSector(ds, b, err)) return false;
+    return reload(err);
+}
+
+// PROT: the protection bits, in place.
+bool Disk::setProtection(const QString &name, quint8 attr, QString *err) {
+    const int k = indexOf(name);
+    if (k < 0) { *err = "no such file: " + name; return false; }
+    const File f = m_files[k];
+    TS ds;
+    int i;
+    if (!entrySlot(f, &ds, &i)) { *err = "the directory has changed"; return false; }
+    QByteArray b;
+    if (!readSector(ds, &b, err)) return false;
+    const int at = 16 + i * EntrySize + 11;
+    b[at] = char((uchar(b[at]) & ~ProtectionBits) | (attr & ProtectionBits));
+    if (!writeSector(ds, b, err)) return false;
+    return reload(err);
+}
+
+bool Disk::setVolumeName(const QByteArray &name, QString *err) {
+    if (name.size() > VolumeNameLength) { *err = QString("a FLEX volume name has up to %1 characters").arg(VolumeNameLength); return false; }
+    QByteArray s;
+    if (!readSector(TS(0, SirSector), &s, err)) return false;
+    s.replace(0x10, VolumeNameLength, name.leftJustified(VolumeNameLength, '\0'));
+    if (!writeSector(TS(0, SirSector), s, err)) return false;
+    return reload(err);
+}
+
+bool Disk::setVolumeNumber(int number, QString *err) {
+    if (number < 0 || number > 0xFFFF) { *err = "a FLEX volume number is 0 to 65535"; return false; }
+    QByteArray s;
+    if (!readSector(TS(0, SirSector), &s, err)) return false;
+    putU16(&s, 0x1B, number);
+    if (!writeSector(TS(0, SirSector), s, err)) return false;
+    return reload(err);
+}
+
+// ------------------------------------------------------------------------------------------------ the boot loader
+
+bool Disk::bootSectors(QByteArray *out, QString *err) const {
+    QByteArray a, b;
+    if (!readSector(TS(0, 1), &a, err) || !readSector(TS(0, 2), &b, err)) return false;
+    *out = a + b;
+    return true;
+}
+
+bool Disk::hasLoader() const {
+    QByteArray a;
+    QString e;
+    if (!readSector(TS(0, 1), &a, &e)) return false;
+    for (char c : a) if (c) return true;
+    return false;
+}
+
+TS Disk::bootLink() const {
+    QByteArray a;
+    QString e;
+    if (!readSector(TS(0, 1), &a, &e)) return TS();
+    return tsAt(a, BootLinkOffset);
+}
+
+bool Disk::setBootSectors(const QByteArray &sectors, const TS &linkTo, QString *err) {
+    if (sectors.size() != 2 * SectorSize) { *err = "a boot loader is two sectors"; return false; }
+    QByteArray a = sectors.left(SectorSize);
+    putTS(&a, BootLinkOffset, linkTo);
+    return writeSector(TS(0, 1), a, err) && writeSector(TS(0, 2), sectors.mid(SectorSize), err);
+}
+
+bool Disk::setBootLink(const TS &to, QString *err) {
+    QByteArray a;
+    if (!readSector(TS(0, 1), &a, err)) return false;
+    putTS(&a, BootLinkOffset, to);
+    return writeSector(TS(0, 1), a, err);
+}
+
+// ------------------------------------------------------------------------------------------------ a new disc
+
+// NEWDISK (TSC's, FLEX 2.0 and FLEX 9.0 alike): every sector formatted with a link to the next, data and record
+// numbers zero; the SIR written; the last sector of track 0 made the directory's end. NEWDISK then puts its boot
+// loader in sector 1; this program leaves sector 1 empty.
+bool Disk::makeBlank(dw::device::Linear *disc, int tracks, int sectors, const QByteArray &name, int number, const QDate &date, QString *err) {
+    if (sectors < FirstDirSector || sectors > 255) { *err = "a FLEX disc has 5 to 255 sectors per track"; return false; }
+    if (tracks < 2 || tracks > 256) { *err = "a FLEX disc has 2 to 256 tracks"; return false; }
+    if (disc->size() != qint64(tracks) * sectors * SectorSize) { *err = "the disc's size isn't its geometry's"; return false; }
+    if (name.size() > VolumeNameLength) { *err = QString("a FLEX volume name has up to %1 characters").arg(VolumeNameLength); return false; }
+    if (number < 0 || number > 0xFFFF) { *err = "a FLEX volume number is 0 to 65535"; return false; }
+    QByteArray d(int(disc->size()), '\0');
+    for (int t = 0; t < tracks; ++t)
+        for (int s = 1; s <= sectors; ++s) {
+            const int off = (t * sectors + s - 1) * SectorSize;
+            TS link;
+            if (t == 0 && s == sectors) link = TS();                 // the directory's last sector
+            else if (s < sectors) link = TS(t, s + 1);
+            else if (t + 1 < tracks) link = TS(t + 1, 1);
+            if (t == 0 && (s == 1 || s == SirSector)) link = TS();   // the loader's sector (empty) and the SIR
+            d[off] = char(link.t);
+            d[off + 1] = char(link.s);
+        }
+    QByteArray sir(SectorSize, '\0');
+    sir.replace(0x10, VolumeNameLength, name.leftJustified(VolumeNameLength, '\0'));
+    putU16(&sir, 0x1B, number);
+    putTS(&sir, 0x1D, TS(1, 1));
+    putTS(&sir, 0x1F, TS(tracks - 1, sectors));
+    putU16(&sir, 0x21, (tracks - 1) * sectors);
+    if (date.isValid()) {
+        sir[0x23] = char(date.month());
+        sir[0x24] = char(date.day());
+        sir[0x25] = char(date.year() % 100);
+    }
+    sir[0x26] = char(tracks - 1);
+    sir[0x27] = char(sectors);
+    d.replace((SirSector - 1) * SectorSize, SectorSize, sir);
+    return disc->write(0, d, err);
+}
+
 } // namespace Flex

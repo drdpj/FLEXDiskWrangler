@@ -17,6 +17,8 @@
  */
 #include "backend.h"
 
+#include <diskwrangler/app/clock.h>
+
 #include "../flexvolume.h"
 #include "../hostpolicy.h"
 
@@ -51,7 +53,8 @@ public:
         }
         return o;
     }
-    QString readOnlyWhy() const override { return QString(); }
+    // The check's errors are flexdw's own (exit 4); a file whose size isn't its SIR's geometry can't be written
+    QString readOnlyWhy() const override { return od.writableGeometry() ? QString() : Flex::OpenedDisc::GeometryText; }
 };
 
 } // namespace
@@ -79,10 +82,30 @@ OpenOutcome Backend::open(const QString &path, const OpenOptions &o) {
     return out;
 }
 
-bool Backend::create(const QString &, const NewOptions &, QString *err, int *exit) {
-    *err = "this version of flexdw can't make new FLEX discs yet";
-    *exit = ExitUnsupported;
-    return false;
+QJsonArray Backend::formats() const {
+    QJsonArray a;
+    for (const dw::fs::Preset &p : Flex::presets()) {
+        QJsonObject o;
+        o["id"] = p.id;
+        o["name"] = p.name;
+        o["description"] = p.notes;
+        o["tracks"] = p.extra.value("tracks").toInt();
+        o["sectorsPerTrack"] = p.extra.value("sectors").toInt();
+        o["doubleSided"] = p.doubleSided;
+        o["bytes"] = qint64(p.bytes);
+        a.append(o);
+    }
+    return a;
+}
+
+// A blank disc as NEWDISK lays one out (Flex::createBlank), named by --title, number 0, dated today; no boot loader.
+bool Backend::create(const QString &file, const NewOptions &n, QString *err, int *exit) {
+    const dw::fs::Preset *p = Flex::findPreset(n.format);
+    if (!p) { *err = QString("unknown format '%1' (flexdw new --list)").arg(n.format); *exit = ExitUsage; return false; }
+    QByteArray name;
+    if (!Flex::volumeNameBytes(n.title, &name, err)) { *exit = ExitUsage; return false; }
+    if (!Flex::createBlank(file, *p, n.title, 0, dw::now().date(), QByteArray(), err)) { *exit = ExitSave; return false; }
+    return true;
 }
 
 std::shared_ptr<dw::xfer::HostPolicy> Backend::hostPolicy(const GetOptions &, QString *, int *) {

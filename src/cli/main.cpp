@@ -33,5 +33,6 @@ int main(int argc, char **argv) {
     info.tool = "flexdw";
     info.program = Flex::appInfo(APP_VERSION);
     info.backend = &backend;
+    info.options = QStringList{"title"};                 // new --title: the volume name
     return dw::runCli(argc, argv, info);
 }

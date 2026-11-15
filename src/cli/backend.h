@@ -28,7 +28,7 @@ class Backend : public dw::cli::Backend {
 public:
     dw::fs::OtherApp self() const override;
     dw::cli::OpenOutcome open(const QString &path, const dw::cli::OpenOptions &o) override;
-    QJsonArray formats() const override { return QJsonArray(); }      // new discs: series flex-2
+    QJsonArray formats() const override;
     bool create(const QString &file, const dw::cli::NewOptions &o, QString *err, int *exit) override;
     std::shared_ptr<dw::xfer::HostPolicy> hostPolicy(const dw::cli::GetOptions &o, QString *err, int *exit) override;
     bool readHost(const QStringList &paths, const dw::cli::PutOptions &o, QVector<dw::TransferItem> *items,

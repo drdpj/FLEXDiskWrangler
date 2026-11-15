@@ -3,7 +3,8 @@
 # run_all.sh <build dir> [<the sample FLEX discs' folder>]
 # Builds the program, flexdw and every test (the core's too), makes the synthetic discs (flex_check.py make), and runs:
 # the core's tests, voltest, the GUI test, flexdw's golden cases, the independent reader against flexdw on every
-# synthetic disc and (given the folder) every sample disc, and the check that flexdw links no Qt GUI library.
+# synthetic disc and (given the folder) every sample disc, flexdw's changes against the independent model of how FLEX
+# writes (flex_check.py writes), and the check that flexdw links no Qt GUI library.
 # Ends "ALL PASSED" or "SOME TESTS FAILED"; exit status 0 only if everything passed.
 src=$(cd "$(dirname "$0")/.." && pwd)
 b=${1:?usage: run_all.sh <build dir> [<sample FLEX discs>]}; real=$2
@@ -55,6 +56,10 @@ if [ -n "$real" ]; then
 else
   echo; echo "(no sample discs given: the real-disc checks were not run)"
 fi
+
+step "flexdw's changes against the independent model of how FLEX writes (flex_check.py writes)${real:+, the sample system discs too}"
+timeout 900 python3 -I "$src/tests/flex_check.py" writes "$b/flexdw/flexdw" "$W/syn" ${real:+"$W/real"} > "$W/writes.log" 2>&1 || fail=1
+cat "$W/writes.log"
 
 rm -rf "$W"
 echo; [ $fail -eq 0 ] && echo "ALL PASSED" || echo "SOME TESTS FAILED"

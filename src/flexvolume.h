@@ -29,6 +29,7 @@
 #include <diskwrangler/app/document.h>
 #include <diskwrangler/fs/detection.h>
 #include <diskwrangler/fs/disc.h>
+#include <diskwrangler/fs/presets.h>
 #include <diskwrangler/fs/volume.h>
 
 #include "flexdisk.h"
@@ -45,7 +46,9 @@ public:
 
 // One flat directory. Attributes: the four protection bits and the random-access flag (retro-files family "flex",
 // docs/retro-files-flex.md) and the size in sectors; the date is the entry's modified date. Volume attributes: the
-// label and the volume number. Series flex-1: every change is refused.
+// label and the volume number. Changes are FLEX's (Flex::Disk): a file written keeps the date and protection it brings
+// (as FLEX's COPY does), today's date when it brings none; the random-access flag comes with a file and can't be
+// changed afterwards (it decides whether the file has a map); a protected file can't be deleted, renamed or replaced.
 class FlexVolume : public dw::fs::Volume {
 public:
     explicit FlexVolume(Disk *d) : m_d(d) {}
@@ -71,10 +74,10 @@ public:
     bool reload(QString *err) override { return m_d->reload(err); }
 
     static dw::fs::Entry entryOf(const File &f);
-    static const char *const ReadOnlyText;       // why every change is refused in this version
 
 private:
     const File *find(const dw::fs::Path &p, QString *err) const;
+    bool fileName(const dw::fs::Path &dir, const QString &name, QString *out, QString *err) const;
     Disk *m_d;
     NameRules m_names;
 };
@@ -98,6 +101,8 @@ public:
     // The window's open: the container opened and its state noted, no reading attached yet.
     bool load(const QString &path, QString *err);
     bool attach(const ProbeResult &r, QString *err);
+    bool writableGeometry() const { return m_exact; }
+    static const char *const GeometryText;       // why a disc whose file isn't its geometry's size can't be written
     void detach();
     void noteFileState();
 
@@ -121,6 +126,7 @@ private:
     dw::device::Container m_img;
     std::unique_ptr<Disk> m_disk;
     bool m_checkOk = true;
+    bool m_exact = true;                         // the SIR's geometry is exactly the file's size
     QDateTime m_fileTime;
     qint64 m_fileSize = -1;
     dw::fs::Disc m_disc;
@@ -129,6 +135,21 @@ private:
 // FLEX Disk Wrangler as a program of the family (the core names only the first two; this one names itself).
 dw::fs::OtherApp self();
 dw::app::AppInfo appInfo(const QString &version);
+
+// ----- new discs
+// The presets: the shapes of the sample discs (docs/disc-format.md), source "flex", each with extra "tracks" and
+// "sectors". addPresets puts them in the core's registry (once); presets() gives them in order.
+void addPresets();
+QVector<dw::fs::Preset> presets();
+const dw::fs::Preset *findPreset(const QString &id);
+// A volume name as stored: up to 8 printable ASCII characters (DISKNAME's rule: what is typed, kept), or why not.
+bool volumeNameBytes(const QString &name, QByteArray *out, QString *err);
+// A blank raw image at path (replacing anything there): the preset's shape laid out as NEWDISK does, the name, number
+// and date in its SIR; with boot (sectors 1 and 2 of another disc, 512 bytes) its loader copied in, not linked.
+bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
+                 const QByteArray &boot, QString *err);
+// The boot loader of another FLEX disc image (sectors 1 and 2): refused if it isn't a FLEX disc or sector 1 is empty.
+bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err);
 
 // ----- detection by tiers
 // A FLEX disc in a raw file: the SIR's geometry fits the file and the directory can be read. Certain when the

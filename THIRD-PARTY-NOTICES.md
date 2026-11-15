@@ -22,3 +22,4 @@ shipped with it (Help > Licences).
 | What | Used for |
 | --- | --- |
 | The owner's FLEX disc images (`testdata/FLEXDisks`, not in this repository) | the layout of the SIR, the directory, file and free chains, random files' sector maps and deleted entries, as `docs/disc-format.md` records; the tests read them from outside the repo |
+| FLEX itself, on those discs: TSC FLEX 9.0 `FLEX.SYS`, `NEWDISK.CMD`, `CAT.CMD` and `DISKNAME.CMD` (SYS900), FHL Color FLEX 5.0:5 `FLEX505.SYS` and FHL's FMS source `FMSFLEX.TXT` / `FMSEQU.TXT` (FLX505, FLX503TX), GIMIX FLEX 2.2 `FLEXDATE.SYS`, `FORMAT.CMD` and `PROT.CMD` (SY22_411), TSC FLEX 2.0 `FLEX2.SYS`, `FLEX.SYS`, `FLEX.COR` and `NEWDISK.CMD` (FL2_0SWT, FLEX2-01) | read and disassembled to settle how FLEX writes (series flex-2), as `docs/disc-format.md` records; none of their code or text is in this repository |

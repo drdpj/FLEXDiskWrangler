@@ -19,13 +19,13 @@
 
 #include <QFileInfo>
 
+#include <diskwrangler/app/clock.h>
+
 using dw::fs::AttrSpec;
 using dw::fs::Entry;
 using dw::fs::Path;
 
 namespace Flex {
-
-const char *const FlexVolume::ReadOnlyText = "this version of FLEX Disk Wrangler only reads FLEX discs";
 
 // ------------------------------------------------------------------------------------------------ names
 
@@ -66,11 +66,11 @@ QString NameRules::fromHost(const QString &hostName, dw::fs::NodeKind) const {
 dw::fs::Caps FlexVolume::caps() const {
     dw::fs::Caps c;
     c.dirs = false;
-    c.rename = false;                            // flex-1: nothing changes
+    c.rename = true;
     c.title = true;
     c.dates = true;
     c.settableDates = false;
-    c.maxEntriesPerDir = m_d->dirSectors().size() * EntriesPerDirSector;
+    c.maxEntriesPerDir = -1;                     // FLEX grows the directory from the free chain
     return c;
 }
 
@@ -79,20 +79,19 @@ QVector<AttrSpec> FlexVolume::fileAttrs() const {
         AttrSpec a;
         a.key = key; a.label = label; a.type = AttrSpec::Bool; a.letter = letter;
         a.retroFamily = "flex"; a.retroKey = retro;
-        a.editable = false;                      // flex-1
         return a;
     };
     AttrSpec sectors;
     sectors.key = "sectors"; sectors.label = "Sectors"; sectors.type = AttrSpec::Int; sectors.editable = false; sectors.sample = "00000";
     return {flag("write", "Write-protected", "W", "writeProtect"), flag("delete", "Delete-protected", "D", "deleteProtect"),
             flag("read", "Read-protected", "R", "readProtect"), flag("catalog", "Catalogue-protected", "C", "catalogProtect"),
-            flag("random", "Random access", "", "random"), sectors};
+            [&] { AttrSpec r = flag("random", "Random access", "", "random"); r.editable = false; return r; }(), sectors};
 }
 
 QVector<AttrSpec> FlexVolume::volumeAttrs() const {
     AttrSpec label, number;
-    label.key = "label"; label.label = "Volume name"; label.type = AttrSpec::Text; label.editable = false;
-    number.key = "number"; number.label = "Volume number"; number.type = AttrSpec::Int; number.editable = false;
+    label.key = "label"; label.label = "Volume name"; label.type = AttrSpec::Text;
+    number.key = "number"; number.label = "Volume number"; number.type = AttrSpec::Int;
     return {label, number};
 }
 
@@ -143,14 +142,83 @@ bool FlexVolume::read(const Path &file, QByteArray *out, QString *err) const {
     return f && m_d->readFile(*f, out, err);
 }
 
-bool FlexVolume::write(const Path &, const QString &, const QByteArray &, const dw::fs::AttrValues &, const QDateTime &, bool, QString *err) {
-    *err = ReadOnlyText;
-    return false;
+bool FlexVolume::fileName(const Path &dir, const QString &name, QString *out, QString *err) const {
+    if (!dir.isRoot()) { *err = "a FLEX disc has no folders"; return false; }
+    if (!m_names.valid(name, dw::fs::NodeKind::File, err)) { *err = name + ": " + *err; return false; }
+    *out = name.toUpper();                       // FLEX names are upper case on the disc
+    return true;
 }
-bool FlexVolume::remove(const Path &, QString *err) { *err = ReadOnlyText; return false; }
-bool FlexVolume::rename(const Path &, const Path &, QString *err) { *err = ReadOnlyText; return false; }
-bool FlexVolume::setAttrs(const Path &, const dw::fs::AttrValues &, QString *err) { *err = ReadOnlyText; return false; }
-bool FlexVolume::setVolumeAttrs(const dw::fs::AttrValues &, QString *err) { *err = ReadOnlyText; return false; }
+
+static quint8 protectionOf(const dw::fs::AttrValues &a, quint8 was) {
+    quint8 p = was;
+    auto bit = [&](const char *key, quint8 b) {
+        if (!a.contains(key)) return;
+        if (a.value(key).toBool()) p |= b;
+        else p &= quint8(~b);
+    };
+    bit("write", WriteProtect);
+    bit("delete", DeleteProtect);
+    bit("read", ReadProtect);
+    bit("catalog", CatalogProtect);
+    return p;
+}
+
+// A file copied in keeps its protection and date, as FLEX's COPY keeps them; with no date, today's (FLEX's own for a
+// new file). Replacing a file deletes it first, as FLEX would (so a protected one is refused).
+bool FlexVolume::write(const Path &dir, const QString &name, const QByteArray &data, const dw::fs::AttrValues &attrs,
+                       const QDateTime &when, bool replace, QString *err) {
+    QString n;
+    if (!fileName(dir, name, &n, err)) return false;
+    if (data.isEmpty()) { *err = n + " is empty: FLEX can't hold an empty file"; return false; }
+    if (m_d->indexOf(n) >= 0) {
+        if (!replace) { *err = n + " already exists"; return false; }
+        if (!m_d->deleteFile(n, err)) return false;
+    }
+    const QDate date = when.isValid() ? when.date() : dw::now().date();
+    return m_d->writeFile(n, data, protectionOf(attrs, 0), attrs.value("random").toBool(), date, err);
+}
+
+bool FlexVolume::remove(const Path &node, QString *err) {
+    const File *f = find(node, err);
+    return f && m_d->deleteFile(f->name, err);
+}
+
+bool FlexVolume::rename(const Path &from, const Path &to, QString *err) {
+    const File *f = find(from, err);
+    if (!f) return false;
+    QString n;
+    if (!fileName(to.parent(), to.name(), &n, err)) return false;
+    if (n == f->name) return true;
+    return m_d->renameFile(f->name, n, err);
+}
+
+bool FlexVolume::setAttrs(const Path &node, const dw::fs::AttrValues &a, QString *err) {
+    const File *f = find(node, err);
+    if (!f) return false;
+    if (a.contains("random") && a.value("random").toBool() != f->isRandom()) {
+        *err = f->name + ": whether a file is random-access can't be changed (it decides whether the file has a sector map)";
+        return false;
+    }
+    if (a.contains("sectors") && a.value("sectors").toInt() != f->sectors) { *err = f->name + ": the number of sectors can't be set"; return false; }
+    const quint8 p = protectionOf(a, f->attr);
+    if (p == f->attr) return true;
+    return m_d->setProtection(f->name, p, err);
+}
+
+bool FlexVolume::setVolumeAttrs(const dw::fs::AttrValues &a, QString *err) {
+    if (a.contains("label")) {
+        QByteArray b;
+        if (!volumeNameBytes(a.value("label").toString(), &b, err)) return false;
+        if (!m_d->setVolumeName(b, err)) return false;
+    }
+    if (a.contains("number")) {
+        bool ok = false;
+        const int n = a.value("number").toString().trimmed().toInt(&ok);
+        if (!ok) { *err = "a FLEX volume number is 0 to 65535"; return false; }
+        if (!m_d->setVolumeNumber(n, err)) return false;
+    }
+    return true;
+}
 
 // ------------------------------------------------------------------------------------------------ the opened disc
 
@@ -189,6 +257,7 @@ void OpenedDisc::detach() {
     m_disc.clearMounts();
     m_disk.reset();
     m_checkOk = true;
+    m_exact = true;
 }
 
 FlexVolume *OpenedDisc::volume() const {
@@ -205,13 +274,17 @@ bool OpenedDisc::attach(const ProbeResult &r, QString *err) {
     if (!disk->attach(dw::device::Linear(&m_img, dw::device::SideOrder(), l.bytes()), err)) return false;
     m_disk = std::move(disk);
     m_checkOk = m_disk->check().ok();
-    m_disc.addMount({"FLEX", std::make_shared<FlexVolume>(m_disk.get()), true, FlexVolume::ReadOnlyText, "flex"});
+    m_exact = r.exact;
+    m_disc.addMount({"FLEX", std::make_shared<FlexVolume>(m_disk.get()), false, QString(), "flex"});
     return true;
 }
+
+const char *const OpenedDisc::GeometryText = "the image file's size doesn't match the disc's geometry in its System Information Record";
 
 QString OpenedDisc::readOnlyWhy(int mount) const {
     if (m_disc.mounts().isEmpty()) return "no disc";
     if (!m_checkOk) return "the disc has errors (Tools > Check disc)";
+    if (!m_exact) return GeometryText;
     const dw::fs::Disc::Mount m = m_disc.mounts().value(mount);
     return m.readOnly ? m.readOnlyWhy : QString();
 }
@@ -269,6 +342,99 @@ dw::app::AppInfo appInfo(const QString &version) {
     a.organisation = "flexdiskwrangler";
     a.releases = self().releases;
     return a;
+}
+
+// ------------------------------------------------------------------------------------------------ new discs
+
+// The shapes of the sample discs (docs/disc-format.md): FLEX numbers a cylinder's sectors on both sides as one track.
+QVector<dw::fs::Preset> presets() {
+    struct Shape { int tracks, sectors, heads; const char *what, *seen; };
+    const Shape shapes[] = {
+        {35, 10, 1, "5.25\" single-sided, single density, 35 tracks", "FLEX2_A, FLEX2_B, FL2_0SWT, FLEX2-01, ABASIC_1"},
+        {40, 10, 1, "5.25\" single-sided, single density, 40 tracks", "SYS900, D_MAN_1, DMDR_SC1"},
+        {35, 18, 1, "5.25\" single-sided, double density, 35 tracks", "EFORTH"},
+        {40, 20, 2, "5.25\" double-sided, single density, 40 tracks", "DSTAR23"},
+        {40, 36, 2, "5.25\" double-sided, double density, 40 tracks", "FLX505, FLX503TX"},
+        {77, 15, 1, "8\" single-sided, single density, 77 tracks", "C009"},
+    };
+    QVector<dw::fs::Preset> out;
+    for (const Shape &s : shapes) {
+        dw::fs::Preset p;
+        p.id = QString("flex-%1x%2").arg(s.tracks).arg(s.sectors);
+        const qint64 bytes = qint64(s.tracks) * s.sectors * SectorSize;
+        p.name = QString("FLEX, %1 tracks of %2 sectors (%3, %4K)").arg(s.tracks).arg(s.sectors).arg(s.what).arg(bytes / 1024.0, 0, 'f', bytes % 1024 ? 1 : 0);
+        p.fsId = "flex";
+        p.source = "flex";
+        p.cylinders = s.tracks;
+        p.heads = s.heads;
+        p.sectors = s.sectors / s.heads;
+        p.sectorSize = SectorSize;
+        p.bytes = quint64(bytes);
+        p.containers = QStringList{"raw"};
+        p.suffix = "dsk";
+        p.doubleSided = s.heads == 2;
+        p.titleWhat = "Volume name";
+        p.titleMax = VolumeNameLength;
+        p.notes = QString("The shape of the sample discs %1.").arg(s.seen);
+        p.extra["tracks"] = s.tracks;
+        p.extra["sectors"] = s.sectors;
+        out << p;
+    }
+    return out;
+}
+
+void addPresets() {
+    dw::fs::presets().removeSource("flex");
+    for (const dw::fs::Preset &p : presets()) dw::fs::presets().add(p);
+}
+
+const dw::fs::Preset *findPreset(const QString &id) {
+    addPresets();
+    const dw::fs::Preset *p = dw::fs::presets().find(id);
+    return p && p->source == "flex" ? p : nullptr;
+}
+
+bool volumeNameBytes(const QString &name, QByteArray *out, QString *err) {
+    if (name.size() > VolumeNameLength) { *err = QString("a FLEX volume name has up to %1 characters").arg(VolumeNameLength); return false; }
+    for (QChar c : name)
+        if (c.unicode() < 0x20 || c.unicode() > 0x7E) { *err = QString("'%1' can't be in a FLEX volume name (printable ASCII only)").arg(c); return false; }
+    *out = name.toLatin1();
+    return true;
+}
+
+bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
+                 const QByteArray &boot, QString *err) {
+    const int tracks = p.extra.value("tracks").toInt(), sectors = p.extra.value("sectors").toInt();
+    QByteArray nameBytes;
+    if (!volumeNameBytes(name, &nameBytes, err)) return false;
+    Sir s;
+    s.lastTrack = tracks - 1;
+    s.sectors = sectors;
+    const dw::device::RawLayout l = layoutOf(s);
+    dw::device::Container img;
+    img.createBlank(dw::device::Kind::Raw, l, QString("Made by FLEX Disk Wrangler, %1").arg(p.id));
+    dw::device::Linear lin(&img, dw::device::SideOrder(), l.bytes());
+    if (!Disk::makeBlank(&lin, tracks, sectors, nameBytes, number, date, err)) return false;
+    if (!boot.isEmpty()) {
+        Disk d;
+        if (!d.attach(lin, err) || !d.setBootSectors(boot, TS(), err)) return false;
+    }
+    return img.saveAs(path, dw::device::Kind::Raw, err);
+}
+
+bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err) {
+    dw::device::Container img;
+    if (!img.open(imagePath, err)) return false;
+    const dw::fs::Verdict v = verdict(img, imagePath);
+    const dw::fs::Candidate *c = v.bestCandidate();
+    if (!c || c->fsId != "flex") { *err = QFileInfo(imagePath).fileName() + " isn't a FLEX disc image"; return false; }
+    const ProbeResult r = std::any_cast<ProbeResult>(c->data);
+    const dw::device::RawLayout l = layoutOf(r.sir);
+    if (!img.setRawLayout(l, err)) return false;
+    Disk d;
+    if (!d.attach(dw::device::Linear(&img, dw::device::SideOrder(), l.bytes()), err)) return false;
+    if (!d.hasLoader()) { *err = QFileInfo(imagePath).fileName() + " has no boot loader (its track 0 sector 1 is empty)"; return false; }
+    return d.bootSectors(out, err);
 }
 
 // ------------------------------------------------------------------------------------------------ detection

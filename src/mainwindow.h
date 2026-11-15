@@ -28,8 +28,8 @@
 
 class QAction;
 
-// The file list: the kit's pane, dragging files out (the retro-files format, written only when a target asks) and
-// taking dropped disc images in a window with nothing open.
+// The file list: the kit's pane, dragging files out (the retro-files format, written only when a target asks), taking
+// dropped disc images in a window with no FLEX disc, and files dropped on a disc that can be written.
 class FlexPane : public dw::ui::VolumePane {
     Q_OBJECT
 public:
@@ -59,6 +59,23 @@ public:
     void viewSelected() override;
     void copySelected() override;
     void about() override;
+    void newImageDialog() override;
+    void addFilesDialog() override;
+    void paste() override;
+    void renameSelected() override;
+
+    // What the dialogs do, for them and the tests. newImage: a blank disc (Flex::createBlank) at path, its boot loader
+    // copied from bootSource if one is named, opened in this window (or a new one if this one has a disc). The others
+    // change the open disc in one transaction each.
+    bool newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err);
+    bool renameFile(const Item &item, const QString &newName, QString *err);
+    // The boot loader of another FLEX disc copied in (sectors 1 and 2), linked to FLEX.SYS if this disc has one, else
+    // left unlinked; *done says which.
+    bool copyBootLoader(const QString &image, QString *done, QString *err);
+    // LINK: the boot loader pointed at a file's first sector.
+    bool linkBootLoader(const Item &item, QString *err);
+    void importPaths(const QStringList &paths);
+    void importJson(const QByteArray &json);
 
 protected:
     ActionSpec actionSpec(Act a) const override;
@@ -75,6 +92,9 @@ protected:
     bool afterSaveAs(const QString &path, QString *err) override;
     std::shared_ptr<dw::xfer::HostPolicy> hostPolicy(const QVector<dw::TransferItem> &items) const override;
     bool propertiesEditor(const QVector<Item> &items, PropertiesEdit *edit) override;
+    bool volumeEditor(int mount, const QString &key, VolumeEdit *edit) override;
+    bool dropOpensFiles() const override { return !hasDisc(); }
+    void droppedOnDisc(dw::ui::VolumePane *pane, QTreeWidgetItem *target, const QStringList &paths) override;
     bool detectImage(const QString &path, int force, dw::fs::Verdict *verdict) override;
     bool openDocument(const QString &path, const dw::fs::Verdict &verdict, const dw::fs::Candidate *pick, int force) override;
     void openStopped() override;
@@ -83,10 +103,13 @@ protected:
 
 private slots:
     void discInfo();
+    void copyBootLoaderDialog();
+    void linkBootLoaderSelected();
 
 private:
     FlexPane *flexPane() const { return static_cast<FlexPane *>(pane()); }
     Flex::OpenedDisc m_doc;
     QString m_notFlex;                 // why the open file wasn't read as FLEX (the status line says it)
     QAction *m_actCheck = nullptr, *m_actInfo = nullptr, *m_actLabel = nullptr, *m_optBackup = nullptr;
+    QAction *m_actBoot = nullptr, *m_actLink = nullptr;
 };
