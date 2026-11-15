@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FLEX Disk Wrangler
+GenericName=Disc image viewer
+Comment=View FLEX (6800 / 6809) disc images and copy their files out
+Exec=flexdiskwrangler %F
+Icon=flexdiskwrangler
+Terminal=false
+Categories=Utility;Archiving;
+StartupWMClass=flexdiskwrangler

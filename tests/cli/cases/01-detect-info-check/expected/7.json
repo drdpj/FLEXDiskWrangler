@@ -1,0 +1,64 @@
+{
+    "changes": [
+    ],
+    "command": "info",
+    "dryRun": false,
+    "error": {
+        "code": 6,
+        "kind": "unsupported",
+        "message": "this is a UniFLEX disc (\"uniflex\"): FLEX Disk Wrangler can't open it",
+        "path": null
+    },
+    "exit": 6,
+    "image": "img-uniflex.dsk",
+    "ok": false,
+    "result": {
+        "app": null,
+        "candidates": [
+            {
+                "description": "a UniFLEX disc (\"uniflex\")",
+                "evidence": [
+                    "block 1 names a UniFLEX file system and pack"
+                ],
+                "fsId": "uniflex",
+                "name": "UniFLEX",
+                "notes": [
+                ],
+                "probe": "other",
+                "safeToWrite": true,
+                "supported": false,
+                "tier": "possible"
+            }
+        ],
+        "chosen": {
+            "description": "a UniFLEX disc (\"uniflex\")",
+            "evidence": [
+                "block 1 names a UniFLEX file system and pack"
+            ],
+            "fsId": "uniflex",
+            "name": "UniFLEX",
+            "notes": [
+            ],
+            "probe": "other",
+            "safeToWrite": true,
+            "supported": false,
+            "tier": "possible"
+        },
+        "container": {
+            "kind": "raw",
+            "name": "raw sector image",
+            "readOnly": false,
+            "size": 1261568
+        },
+        "owner": null,
+        "verdict": "open",
+        "volumes": [
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

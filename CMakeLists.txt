@@ -1,0 +1,68 @@
+# FLEX Disk Wrangler - Copyright (C) 2026 Daniel Jameson
+# Licensed under the GNU General Public License v3 or later (see LICENSE).
+cmake_minimum_required(VERSION 3.16)   # Qt 6 needs 3.16
+project(flexdiskwrangler LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+# Qt 6 if it is installed, otherwise Qt 5 (5.15); -DUSE_QT5=ON builds with Qt 5 even when Qt 6 is there.
+option(USE_QT5 "Build with Qt 5 instead of Qt 6" OFF)
+if(USE_QT5)
+    find_package(QT NAMES Qt5 REQUIRED COMPONENTS Widgets)
+else()
+    find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
+endif()
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+include(GNUInstallDirs)
+if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt)   # the code shared with the other Disk Wranglers
+    message(FATAL_ERROR "core/ is empty: run 'git submodule update --init' (DiskWranglerCore is a git submodule)")
+endif()
+add_subdirectory(core)
+include(version.cmake)         # APP_VERSION from git describe (Help > About)
+set(FLEXDW_ICNS "")
+if(APPLE)
+    set(FLEXDW_ICNS icons/flexdiskwrangler.icns)
+    set_source_files_properties(${FLEXDW_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+endif()
+add_executable(flexdiskwrangler MACOSX_BUNDLE ${FLEXDW_ICNS} src/licences.qrc
+    src/main.cpp src/mainwindow.cpp src/viewer.cpp src/icon.cpp src/hostpolicy.cpp src/flextext.cpp src/flexdisk.cpp src/flexvolume.cpp
+    src/mainwindow.h src/viewer.h src/icon.h src/hostpolicy.h src/flextext.h src/flexdisk.h src/flexvolume.h)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/licences-bundled.qrc)   # a release build's library licences (ci/)
+    target_sources(flexdiskwrangler PRIVATE licences-bundled.qrc)
+endif()
+target_compile_definitions(flexdiskwrangler PRIVATE APP_VERSION="${APP_VERSION}")
+if(APP_VERSION_NUMBER)
+    set_target_properties(flexdiskwrangler PROPERTIES MACOSX_BUNDLE_SHORT_VERSION_STRING ${APP_VERSION_NUMBER}
+                                                    MACOSX_BUNDLE_BUNDLE_VERSION ${APP_VERSION_NUMBER})
+endif()
+target_link_libraries(flexdiskwrangler DiskWrangler::Core Qt${QT_VERSION_MAJOR}::Widgets)
+set_target_properties(flexdiskwrangler PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_NAME "FLEX Disk Wrangler"
+    MACOSX_BUNDLE_GUI_IDENTIFIER io.github.drdpj.flexdiskwrangler
+    MACOSX_BUNDLE_ICON_FILE flexdiskwrangler.icns)
+if(WIN32)
+    set_target_properties(flexdiskwrangler PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+install(TARGETS flexdiskwrangler RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} BUNDLE DESTINATION .)
+# flexdw: the command-line program (QtCore only; no window, no display). Built beside the GUI program.
+add_executable(flexdw src/cli/main.cpp src/cli/backend.cpp src/flexdisk.cpp src/flexvolume.cpp src/hostpolicy.cpp
+    src/cli/backend.h src/flexdisk.h src/flexvolume.h src/hostpolicy.h)
+target_compile_definitions(flexdw PRIVATE APP_VERSION="${APP_VERSION}")
+target_link_libraries(flexdw DiskWrangler::Cli Qt${QT_VERSION_MAJOR}::Core)
+if(WIN32)
+    set_target_properties(flexdw PROPERTIES WIN32_EXECUTABLE FALSE)
+endif()
+if(APPLE)                       # inside the bundle, beside the GUI program
+    install(TARGETS flexdw RUNTIME DESTINATION flexdiskwrangler.app/Contents/MacOS)
+else()
+    install(TARGETS flexdw RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+if(UNIX AND NOT APPLE)
+    install(FILES flexdiskwrangler.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES icons/flexdiskwrangler.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+    foreach(s 16 24 32 48 64 128 256 512)
+        install(FILES icons/flexdiskwrangler-${s}.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${s}x${s}/apps
+                RENAME flexdiskwrangler.png)
+    endforeach()
+endif()

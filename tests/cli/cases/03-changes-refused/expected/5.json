@@ -1,0 +1,23 @@
+{
+    "changes": [
+    ],
+    "command": "title",
+    "dryRun": false,
+    "error": {
+        "code": 6,
+        "kind": "unsupported",
+        "message": "read-only: flex: this version of FLEX Disk Wrangler only reads FLEX discs",
+        "path": null
+    },
+    "exit": 6,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

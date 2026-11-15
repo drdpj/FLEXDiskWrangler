@@ -1,0 +1,86 @@
+{
+    "changes": [
+        {
+            "from": "DATA.RAN",
+            "note": null,
+            "op": "add",
+            "path": "data.ran",
+            "vol": "FLEX"
+        },
+        {
+            "from": "EMPTY",
+            "note": null,
+            "op": "add",
+            "path": "empty",
+            "vol": "FLEX"
+        },
+        {
+            "from": "HIDDEN.SYS",
+            "note": null,
+            "op": "add",
+            "path": "hidden.sys",
+            "vol": "FLEX"
+        },
+        {
+            "from": "PROG.CMD",
+            "note": null,
+            "op": "add",
+            "path": "prog.cmd",
+            "vol": "FLEX"
+        },
+        {
+            "from": "README.TXT",
+            "note": null,
+            "op": "add",
+            "path": "readme.txt",
+            "vol": "FLEX"
+        }
+    ],
+    "command": "get",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "manifest": null,
+        "written": [
+            {
+                "from": "DATA.RAN",
+                "host": "data.ran",
+                "sidecar": false,
+                "size": 2772
+            },
+            {
+                "from": "EMPTY",
+                "host": "empty",
+                "sidecar": false,
+                "size": 252
+            },
+            {
+                "from": "HIDDEN.SYS",
+                "host": "hidden.sys",
+                "sidecar": false,
+                "size": 756
+            },
+            {
+                "from": "PROG.CMD",
+                "host": "prog.cmd",
+                "sidecar": false,
+                "size": 3024
+            },
+            {
+                "from": "README.TXT",
+                "host": "readme.txt",
+                "sidecar": false,
+                "size": 2268
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

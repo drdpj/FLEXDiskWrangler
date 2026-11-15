@@ -1,0 +1,31 @@
+{
+    "changes": [
+    ],
+    "command": "check",
+    "dryRun": false,
+    "error": {
+        "code": 4,
+        "kind": "check",
+        "message": "1 error(s) found",
+        "path": null
+    },
+    "exit": 4,
+    "image": "img-bad.dsk",
+    "ok": false,
+    "result": {
+        "errors": [
+            "the free chain loops back to 4/2 after 51 sectors"
+        ],
+        "info": [
+        ],
+        "warnings": [
+            "268 sectors after track 0 belong to no file and aren't free"
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

@@ -1,0 +1,7 @@
+$TOOL ls img.dsk --json
+$TOOL ls img.dsk
+$TOOL get img.dsk / out --json
+$TOOL get img.dsk README.TXT out/one --json
+$TOOL get img.dsk NOSUCH out/none --json
+$TOOL ls img-bad.dsk --json
+$TOOL get img-bad.dsk ONE.TXT out/bad --json

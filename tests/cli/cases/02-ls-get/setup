@@ -1,0 +1,2 @@
+python3 -I "$TESTS/flex_check.py" make syn
+cp syn/basic.dsk img.dsk; cp syn/bad-chain.dsk img-bad.dsk

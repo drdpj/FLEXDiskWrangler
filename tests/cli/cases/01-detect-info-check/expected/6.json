@@ -1,0 +1,64 @@
+{
+    "changes": [
+    ],
+    "command": "info",
+    "dryRun": false,
+    "error": {
+        "code": 6,
+        "kind": "unsupported",
+        "message": "this is an OS-9 disc \"SAMPLE\" (1232 sectors): FLEX Disk Wrangler can't open it",
+        "path": null
+    },
+    "exit": 6,
+    "image": "img-os9.dsk",
+    "ok": false,
+    "result": {
+        "app": null,
+        "candidates": [
+            {
+                "description": "an OS-9 disc \"SAMPLE\" (1232 sectors)",
+                "evidence": [
+                    "its first sector is an OS-9 identification sector"
+                ],
+                "fsId": "os9",
+                "name": "OS-9",
+                "notes": [
+                ],
+                "probe": "other",
+                "safeToWrite": true,
+                "supported": false,
+                "tier": "likely"
+            }
+        ],
+        "chosen": {
+            "description": "an OS-9 disc \"SAMPLE\" (1232 sectors)",
+            "evidence": [
+                "its first sector is an OS-9 identification sector"
+            ],
+            "fsId": "os9",
+            "name": "OS-9",
+            "notes": [
+            ],
+            "probe": "other",
+            "safeToWrite": true,
+            "supported": false,
+            "tier": "likely"
+        },
+        "container": {
+            "kind": "raw",
+            "name": "raw sector image",
+            "readOnly": false,
+            "size": 315392
+        },
+        "owner": null,
+        "verdict": "open",
+        "volumes": [
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

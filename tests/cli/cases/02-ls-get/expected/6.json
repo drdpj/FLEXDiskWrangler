@@ -1,0 +1,64 @@
+{
+    "changes": [
+    ],
+    "command": "ls",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img-bad.dsk",
+    "ok": true,
+    "result": {
+        "entries": [
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": false,
+                    "delete": false,
+                    "random": false,
+                    "read": false,
+                    "sectors": 9,
+                    "write": false
+                },
+                "created": null,
+                "display": "/ONE.TXT",
+                "kind": "file",
+                "modified": "1983-01-02T00:00:00",
+                "name": "ONE.TXT",
+                "path": [
+                    "ONE.TXT"
+                ],
+                "problem": "its chain ends after 3 of its 9 sectors",
+                "size": 2268,
+                "sizeExact": false
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "catalog": false,
+                    "delete": false,
+                    "random": false,
+                    "read": false,
+                    "sectors": 12,
+                    "write": false
+                },
+                "created": null,
+                "display": "/TWO.BIN",
+                "kind": "file",
+                "modified": "1983-01-02T00:00:00",
+                "name": "TWO.BIN",
+                "path": [
+                    "TWO.BIN"
+                ],
+                "problem": null,
+                "size": 3024,
+                "sizeExact": false
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "FLEX",
+    "warnings": [
+    ]
+}

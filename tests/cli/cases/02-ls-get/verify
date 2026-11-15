@@ -1,0 +1,6 @@
+# the files come out exactly as the independent reader reads them
+python3 -I "$TESTS/flex_check.py" read img.dsk > ind.json
+python3 -I -c "import json,hashlib,sys; d=json.load(open('ind.json'))
+for f in d['files']:
+    h=hashlib.sha256(open('out/'+f['name'].lower(),'rb').read()).hexdigest()
+    assert h==f['sha256'], f['name']"

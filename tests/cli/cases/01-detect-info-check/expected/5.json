@@ -1,0 +1,184 @@
+{
+    "changes": [
+    ],
+    "command": "info",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img-short.dsk",
+    "ok": true,
+    "result": {
+        "app": {
+            "date": "2026-11-15",
+            "deletedEntries": 1,
+            "directorySectors": 6,
+            "exactSize": false,
+            "freeSectors": 352,
+            "label": "BASIC",
+            "sectorsPerTrack": 10,
+            "tracks": 40,
+            "volumeNumber": 42
+        },
+        "candidates": [
+            {
+                "description": "FLEX disc BASIC, 40 tracks of 10 sectors",
+                "evidence": [
+                    "the SIR describes 40 tracks of 10 sectors"
+                ],
+                "fsId": "flex",
+                "name": "FLEX",
+                "notes": [
+                    "the file is 99840 bytes; the SIR's geometry is 102400"
+                ],
+                "probe": "flex",
+                "safeToWrite": false,
+                "supported": true,
+                "tier": "possible"
+            }
+        ],
+        "chosen": {
+            "description": "FLEX disc BASIC, 40 tracks of 10 sectors",
+            "evidence": [
+                "the SIR describes 40 tracks of 10 sectors"
+            ],
+            "fsId": "flex",
+            "name": "FLEX",
+            "notes": [
+                "the file is 99840 bytes; the SIR's geometry is 102400"
+            ],
+            "probe": "flex",
+            "safeToWrite": false,
+            "supported": true,
+            "tier": "possible"
+        },
+        "container": {
+            "kind": "raw",
+            "name": "raw sector image",
+            "readOnly": false,
+            "size": 99840
+        },
+        "owner": null,
+        "verdict": "open",
+        "volumes": [
+            {
+                "caps": {
+                    "contiguousOnly": false,
+                    "dates": true,
+                    "dirs": false,
+                    "maxEntriesPerDir": 60,
+                    "namespaces": false,
+                    "rename": false,
+                    "renameAcrossDirs": false,
+                    "settableDates": false,
+                    "title": true
+                },
+                "fileAttrSpecs": [
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "write",
+                        "label": "Write-protected",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "delete",
+                        "label": "Delete-protected",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "read",
+                        "label": "Read-protected",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "catalog",
+                        "label": "Catalogue-protected",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "random",
+                        "label": "Random access",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "sectors",
+                        "label": "Sectors",
+                        "type": "int"
+                    }
+                ],
+                "fsId": "flex",
+                "info": {
+                    "entriesFree": 55,
+                    "free": 88704,
+                    "largestFree": -1,
+                    "title": "BASIC",
+                    "total": 98280
+                },
+                "label": "FLEX",
+                "readOnly": true,
+                "readOnlyWhy": "this version of FLEX Disk Wrangler only reads FLEX discs",
+                "vol": "flex",
+                "volumeAttrSpecs": [
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "label",
+                        "label": "Volume name",
+                        "type": "text"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "number",
+                        "label": "Volume number",
+                        "type": "int"
+                    }
+                ],
+                "volumeAttrs": {
+                    "label": "BASIC",
+                    "number": 42
+                }
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

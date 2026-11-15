@@ -1,0 +1,13 @@
+build/
+*.o
+moc_*
+qrc_*
+Makefile
+.qmake.stash
+*.pro.user
+__pycache__/
+/deploy/
+/dist/
+/dmg/
+/licences/bundled/
+/licences-bundled.qrc

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- FLEX Disk Wrangler icon: a 5.25-inch floppy disc. Copyright (C) 2026 Daniel Jameson, GPL v3 or later.
+     Same geometry as floppyIconImage() in src/icon.cpp (100 x 100 grid); keep the two in step. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512">
+  <path fill="#26262c" d="M7.5 5h85a2.5 2.5 0 0 1 2.5 2.5V20h-3.5v8H95v64.5a2.5 2.5 0 0 1-2.5 2.5h-85A2.5 2.5 0 0 1 5 92.5v-85A2.5 2.5 0 0 1 7.5 5z"/>
+  <rect x="12" y="10" width="56" height="19" rx="1.6" fill="#f4f1e8"/>
+  <rect x="12" y="10" width="56" height="5.5" fill="#d8762a"/>
+  <rect x="16" y="19.5" width="40" height="1.5" fill="#8c8779"/>
+  <rect x="16" y="24" width="30" height="1.5" fill="#8c8779"/>
+  <circle cx="50" cy="52" r="12.5" fill="#4a4a52"/>
+  <circle cx="50" cy="52" r="10.5" fill="#8a7c6a"/>
+  <circle cx="50" cy="52" r="6.5" fill="#141418"/>
+  <circle cx="67" cy="48" r="2" fill="#4a4a52"/>
+  <rect x="45.5" y="69" width="9" height="23" rx="4.5" fill="#4a4a52"/>
+</svg>
