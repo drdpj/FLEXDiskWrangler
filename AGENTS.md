@@ -23,7 +23,7 @@ loader from another disc (series flex-2), every change **as FLEX's own file mana
   "Consulted" table.
 * **Never commit third-party disc images**: the tests read the sample discs from outside the repo, and make their own
   synthetic ones (`tests/flex_check.py make`).
-* **`core/` is the git submodule DiskWranglerCore**, pinned to a tag (v1.1.0). Never edit files under `core/` from
+* **`core/` is the git submodule DiskWranglerCore**, pinned to a tag (v1.1.1: the first with this program's installer AppId). Never edit files under `core/` from
   here; a change the core needs is the owner's decision (the plan says to stop and ask).
 
 ## Source map (program in `src/`, tests in `tests/`)
@@ -78,9 +78,8 @@ A new source file goes in both `.pro` files that need it, `CMakeLists.txt`, and 
 in one folder).
 
 CI: `.github/workflows/build.yml` is the family's shared workflow, identical in the three repos (Windows, macOS and
-Linux packages on every push; a release on a `v*` tag). Not yet here: the Windows installer, built on release tags and
-Run workflow, needs an AppId for this program in the core's `ci/installer.iss` (a core change), so those runs stop at
-that step until the core has one.
+Linux packages on every push; a release on a `v*` tag, with a Windows installer, whose AppId for this program is in the
+core's `ci/installer.iss` since v1.1.1).
 
 ## Test
 ```
