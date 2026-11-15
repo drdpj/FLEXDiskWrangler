@@ -1,0 +1,375 @@
+# Shared, unchanged, by Acorn Disk Wrangler, CP/M Disk Wrangler and FLEX Disk Wrangler: the program is whichever *.pro is at the root that doesn't end
+# in dw.pro; that one (acorndw.pro, cpmdw.pro, flexdw.pro) is its console program, built, tested and shipped beside it.
+#
+# Builds Windows (x64 zip; for a release tag or Run workflow also an installer, core/ci/installer.iss), macOS (universal .dmg, Intel and Apple Silicon, macOS 12 and later) and Linux (x86_64
+# AppImage, and a .deb that uses the system's Qt for Ubuntu 22.04+ / Debian 12+), each linked to Qt's shared libraries, with the licence of everything shipped compiled into the
+# program (Help > Licences) and copied beside it. Qt 6 by default; "Run workflow" (Actions tab) can build with
+# Qt 5.15 instead, whose packages are named ...-qt5 (on macOS that one is Apple Silicon only, from Homebrew). Every push and pull request builds and keeps the packages as workflow artifacts; pushing a tag
+# v* also publishes them as a GitHub release (which carries the matching source, as the GPL asks; its notes are release-notes/<tag>.md if the repo has that file, else GitHub generates them); a tag with a
+# suffix, such as v1.0.0-beta.1, makes it a pre-release.
+#
+# The version shown in Help > About is git describe's (version.pri), so a tagged build shows the tag.
+#
+# Each platform builds twice (core/ci/build.sh): the first build is deployed to find out which libraries ship, then
+# core/ci/collect-licences.sh gathers their licences into licences-bundled.qrc and the second build compiles them in.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      qt:
+        description: Qt major version
+        type: choice
+        options: ['6', '5']
+        default: '6'
+
+permissions:
+  contents: read
+
+env:
+  QT: ${{ inputs.qt || '6' }}
+  QT_MAC_VERSION: 6.8.3          # Qt's official macOS build: 6.8 LTS supports macOS 12 and later
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive      # core/ is DiskWranglerCore
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          pacboy: gcc:p make:p
+          install: zip git diffutils      # git: the version in the package names comes from git describe; diffutils: cmp, for collect-licences.sh
+      - name: Install Qt ${{ env.QT }}
+        run: |
+          if [ "$QT" = 6 ]; then pkgs=(qt6-base); else pkgs=(qt5-base qt5-tools); fi
+          pacman -S --noconfirm --needed "${pkgs[@]/#/$MINGW_PACKAGE_PREFIX-}"
+      - name: Identify
+        run: |
+          # MSYS2's git may call a checkout made by another git "dubious" and refuse it; qmake's git describe
+          # (the version shown in Help > About) needs it too
+          git config --global --add safe.directory "$(pwd)"
+          app=$(basename "$(ls ./*.pro | grep -v 'dw\.pro$')" .pro)
+          {
+            echo "APP=$app"
+            echo "CLI=$(ls ./*dw.pro | head -1 | xargs basename -s .pro)"      # the console program: acorndw, cpmdw, flexdw
+            echo "VERSION=$(git describe --tags --always)$([ "$QT" = 5 ] && echo -qt5)"
+          } >> "$GITHUB_ENV"
+      - name: Build and deploy
+        run: bash core/ci/build.sh windows
+      - name: Collect licences
+        run: bash core/ci/collect-licences.sh windows deploy
+      - name: Rebuild with the licences compiled in
+        run: bash core/ci/build.sh windows
+      - name: Package
+        run: |
+          cp -r LICENSE THIRD-PARTY-NOTICES.md licences deploy/
+          mkdir -p dist
+          (cd deploy && zip -qr "../dist/$APP-$VERSION-windows-x64.zip" .)
+      - name: Check it starts outside MSYS2
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          $p = Start-Process -FilePath "deploy\$env:APP.exe" -PassThru
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) { throw "$env:APP.exe exited at once (code $($p.ExitCode)): a DLL is probably missing" }
+          Stop-Process -Id $p.Id
+      - name: Check the console program runs outside MSYS2 and reads a disc it makes
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          $fmt = switch ($env:CLI) { 'cpmdw' { 'ibm-3740' } 'flexdw' { 'flex-40x10' } default { 'adfs-m' } }
+          & "deploy\$env:CLI.exe" --version
+          if ($LASTEXITCODE) { throw "$env:CLI --version failed (exit code $LASTEXITCODE)" }
+          & "deploy\$env:CLI.exe" new "$env:RUNNER_TEMP\t.img" "--format=$fmt" --quiet
+          if ($LASTEXITCODE) { throw "$env:CLI new failed (exit code $LASTEXITCODE)" }
+          & "deploy\$env:CLI.exe" info "$env:RUNNER_TEMP\t.img"
+          if ($LASTEXITCODE) { throw "$env:CLI info failed (exit code $LASTEXITCODE)" }
+      - name: Installer (release tags and Run workflow)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          # Inno Setup 6.3 or later (core/ci/installer.iss uses x64compatible). choco upgrade installs Chocolatey's
+          # current one, or leaves the runner image's alone when that is already current (6.7.1 in October 2026).
+          choco upgrade innosetup -y --no-progress
+          if ($LASTEXITCODE) { throw "could not install Inno Setup" }
+          # Where it went: the folder its installer records, then the usual folders, then PATH. (Looking only in
+          # "Program Files*\Inno Setup *" and reading ISCC.exe's version found nothing on windows-latest.)
+          $places = @()
+          foreach ($hive in 'HKLM:\SOFTWARE\WOW6432Node', 'HKLM:\SOFTWARE', 'HKCU:\SOFTWARE') {
+            Get-ItemProperty "$hive\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup *_is1" -ErrorAction SilentlyContinue |
+              ForEach-Object { if ($_.InstallLocation) { $places += Join-Path $_.InstallLocation 'ISCC.exe' } }
+          }
+          $places += "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          $onPath = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if ($onPath) { $places += $onPath.Source }
+          $iscc = $places | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found; looked in: $($places -join '; ')" }
+          Write-Host "Inno Setup $((Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion): $iscc"
+          # name and copyright from the .pro, as the macOS bundle's; a folder or shortcut name can't hold "/" ("CP/M")
+          $pro = Get-Content "$env:APP.pro"
+          function Pro-Value($key) {
+            ($pro | Select-String -Pattern "^$key\s*=\s*(.*)$" | Select-Object -First 1).Matches[0].Groups[1].Value.Trim()
+          }
+          $title = Pro-Value 'QMAKE_TARGET_PRODUCT'
+          $copyright = Pro-Value 'QMAKE_TARGET_COPYRIGHT'
+          $folder = $title -replace '[\\/:*?"<>|]', ''
+          $version = $env:VERSION -replace '^v', ''
+          $num = if ($version -match '^(\d+)\.(\d+)\.(\d+)') { "$($Matches[1]).$($Matches[2]).$($Matches[3])" } else { '0.0.0' }
+          # an update first deletes the DLLs and the folders this version ships (see core/ci/installer.iss)
+          $del = @('[InstallDelete]', 'Type: files; Name: "{app}\*.dll"')
+          $del += Get-ChildItem deploy -Directory | ForEach-Object { "Type: filesandordirs; Name: ""{app}\$($_.Name)""" }
+          Set-Content -Path build\installer-delete.iss -Value $del -Encoding utf8
+          & $iscc /Qp "/DProgName=$env:APP" "/DProgTitle=$title" "/DProgFolder=$folder" `
+              "/DProgVersion=$version" "/DProgNumVersion=$num" "/DProgCopyright=$copyright" `
+              "/DProgUrl=$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY" "/DDeployDir=$PWD\deploy" "/DSourceRoot=$PWD" `
+              "/DOutDir=$PWD\dist" "/DOutName=$env:APP-$env:VERSION-windows-x64-setup" core\ci\installer.iss
+          if ($LASTEXITCODE) { throw "the installer didn't build (ISCC exit code $LASTEXITCODE)" }
+      - name: Check the installer installs, starts, sees itself when run again and uninstalls
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\*-setup.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP 'installed'
+          $p = Start-Process -FilePath $setup.FullName -Wait -PassThru `
+              -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir"
+          if ($p.ExitCode) { throw "$($setup.Name) failed (exit code $($p.ExitCode))" }
+          if (-not (Test-Path "$dir\$env:APP.exe")) { throw "$($setup.Name) didn't install $env:APP.exe" }
+          # how the program knows it was installed (no File > Create local config file): appsettings.h, installedHere()
+          if (-not (Test-Path "$dir\unins000.dat")) { throw "no unins000.dat beside the installed $env:APP.exe" }
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          $a = Start-Process -FilePath "$dir\$env:APP.exe" -PassThru
+          Start-Sleep -Seconds 8
+          if ($a.HasExited) { throw "the installed $env:APP.exe exited at once (code $($a.ExitCode))" }
+          Stop-Process -Id $a.Id
+          Start-Sleep -Seconds 2
+          # setup again over the same version: it must find the installed copy (core/ci/installer.iss, InitializeSetup)
+          $log = Join-Path $env:RUNNER_TEMP 'reinstall.log'
+          $p = Start-Process -FilePath $setup.FullName -Wait -PassThru `
+              -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir", "/LOG=$log"
+          if ($p.ExitCode) { throw "$($setup.Name) failed over the installed copy (exit code $($p.ExitCode))" }
+          $seen = Select-String -LiteralPath $log -Pattern 'Installed copy: .* for the current user only'
+          if (-not $seen) { Get-Content $log | Select-Object -Last 40; throw "$($setup.Name) didn't see the installed copy" }
+          Write-Host $seen.Line
+          if (-not (Test-Path "$dir\$env:APP.exe")) { throw "$env:APP.exe is gone after installing again" }
+          # the uninstaller hands over to a copy of itself and returns at once: wait for the program to go
+          Start-Process -FilePath "$dir\unins000.exe" -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\$env:APP.exe"); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path "$dir\$env:APP.exe") { throw "the uninstaller left $env:APP.exe behind" }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*
+
+  macos:
+    runs-on: macos-15      # macOS 14 runner images are retired on 2 Nov 2026 (github.com/actions/runner-images/issues/13518); 15 is Apple Silicon too
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive      # core/ is DiskWranglerCore
+      - name: Install Qt 6 (Qt's official universal build)
+        if: env.QT == '6'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_MAC_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+      - name: Install Qt 5 (Homebrew, Apple Silicon only)
+        if: env.QT == '5'
+        run: |
+          brew install qt@5
+          echo "$(brew --prefix qt@5)/bin" >> "$GITHUB_PATH"
+      - name: Identify
+        run: |
+          app=$(basename "$(ls ./*.pro | grep -v 'dw\.pro$')" .pro)
+          {
+            echo "APP=$app"
+            echo "CLI=$(ls ./*dw.pro | head -1 | xargs basename -s .pro)"      # the console program: acorndw, cpmdw, flexdw
+            # A file name can't contain "/", but the Finder shows ":" as "/", so "CP:M Disk Wrangler.app"
+            # appears as "CP/M Disk Wrangler". The disk image's name just drops the slash.
+            name=$(sed -n 's/^QMAKE_TARGET_PRODUCT *= *//p' "$app.pro")
+            echo "BUNDLE=${name//\//:}"
+            echo "VOLUME=${name//\//}"
+            echo "VERSION=$(git describe --tags --always)$([ "$QT" = 5 ] && echo -qt5)"
+            echo "MACARCH=$([ "$QT" = 5 ] && echo arm64 || echo universal)"
+          } >> "$GITHUB_ENV"
+      - name: Build and deploy
+        run: bash core/ci/build.sh macos
+      - name: Collect licences
+        run: bash core/ci/collect-licences.sh macos "build/$APP.app"
+      - name: Rebuild with the licences compiled in
+        run: bash core/ci/build.sh macos
+      - name: Package
+        run: |
+          app="build/$APP.app"
+          cp -R LICENSE THIRD-PARTY-NOTICES.md licences "$app/Contents/Resources/"
+          # Nothing in the bundle may load a library from outside it, except the system's own. A library's own
+          # ID (the first line otool -L prints for it) is left alone: Qt's plugins keep their original ID,
+          # which is harmless.
+          bad=0
+          while IFS= read -r f; do
+              self=$(otool -D "$f" 2>/dev/null | awk 'NR == 2 { print $1 }')
+              otool -L "$f" 2>/dev/null | grep -v ':$' | awk '{ print $1 }' | grep '^/' |
+                  grep -vE '^(/System/|/usr/lib/)' | grep -vxF "${self:-(none)}" |
+                  sed "s|^|::error::${f#build/} loads |" | grep . && bad=1
+          done < <(find "$app" -type f \( -perm -u+x -o -name '*.dylib' \))
+          [ "$bad" = 0 ] || { echo "::error::the bundle still loads libraries from outside it"; exit 1; }
+          codesign --force --deep --sign - "$app"   # ad hoc: macdeployqt's changes broke the linker's signature
+          mkdir -p dmg dist
+          mv "$app" "dmg/$BUNDLE.app"
+          cp -R LICENSE THIRD-PARTY-NOTICES.md licences dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "$VOLUME" -srcfolder dmg -format UDZO -ov "dist/$APP-$VERSION-macos-$MACARCH.dmg"
+      - name: Check the console program in the bundle
+        run: |
+          case "$CLI" in cpmdw) fmt=ibm-3740 ;; flexdw) fmt=flex-40x10 ;; *) fmt=adfs-m ;; esac
+          cli="dmg/$BUNDLE.app/Contents/MacOS/$CLI"
+          "$cli" --version
+          "$cli" new "$RUNNER_TEMP/t.img" "--format=$fmt" --quiet
+          "$cli" info "$RUNNER_TEMP/t.img"
+      - name: Check it starts
+        run: |
+          "dmg/$BUNDLE.app/Contents/MacOS/$APP" & pid=$!
+          sleep 8
+          kill -0 "$pid" || { echo "::error::$APP exited at once"; exit 1; }
+          kill "$pid"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/*
+
+  linux:
+    runs-on: ubuntu-22.04  # the oldest glibc still offered, so the AppImage runs on as many systems as possible
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: 1      # linuxdeploy is itself an AppImage; the runner has no FUSE
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive      # core/ is DiskWranglerCore
+      - name: Install Qt ${{ env.QT }} and linuxdeploy
+        run: |
+          if [ "$QT" = 6 ]; then pkgs=(qt6-base-dev qt6-base-dev-tools qmake6 qt6-qpa-plugins libgl-dev)
+          else pkgs=(qtbase5-dev qt5-qmake); fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "${pkgs[@]}" build-essential dpkg-dev xvfb
+          echo "QMAKE=$(command -v "$([ "$QT" = 6 ] && echo qmake6 || echo qmake)")" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/tools"
+          for t in linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+                   linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage; do
+              curl -fsSL -o "$HOME/tools/$(basename "$t")" "https://github.com/linuxdeploy/$t"
+          done
+          chmod +x "$HOME"/tools/*.AppImage
+          echo "$HOME/tools" >> "$GITHUB_PATH"
+      - name: Identify
+        run: |
+          app=$(basename "$(ls ./*.pro | grep -v 'dw\.pro$')" .pro)
+          {
+            echo "APP=$app"
+            echo "CLI=$(ls ./*dw.pro | head -1 | xargs basename -s .pro)"      # the console program: acorndw, cpmdw, flexdw
+            echo "VERSION=$(git describe --tags --always)$([ "$QT" = 5 ] && echo -qt5)"
+          } >> "$GITHUB_ENV"
+      - name: Build and deploy
+        run: bash core/ci/build.sh linux
+      - name: Console program - golden-image tests, and no Qt GUI libraries
+        run: |
+          # setpriv (util-linux) runs the exit-10 case as nobody; the cases are tests/cli/cases, made with SOURCE_DATE_EPOCH fixed
+          bash tests/cli/run_cli.sh "build-cli/$CLI" "$RUNNER_TEMP/cli"
+          ! ldd "build-cli/$CLI" | grep -iE 'QtGui|QtWidgets'
+      - name: Collect licences
+        run: bash core/ci/collect-licences.sh linux build/AppDir
+      - name: Rebuild with the licences compiled in
+        run: bash core/ci/build.sh linux
+      - name: Package
+        run: |
+          doc="build/AppDir/usr/share/doc/$APP"
+          mkdir -p "$doc" dist
+          cp -r LICENSE THIRD-PARTY-NOTICES.md licences "$doc/"
+          cd build
+          # appimagetool (recent builds) wants a PNG named after the desktop file's Icon= at the top of the AppDir, and
+          # won't make the AppImage's icon from the SVG that linuxdeploy puts there
+          cp "../icons/$APP-256.png" "AppDir/$APP.png"
+          # name the file ourselves: linuxdeploy would use the desktop file's Name, and "CP/M" has a slash in it
+          extra=(); [ -f AppRun.custom ] && extra=(--custom-apprun AppRun.custom --executable "AppDir/usr/bin/$CLI")
+          OUTPUT="../dist/$APP-$VERSION-linux-x86_64.AppImage" \
+              linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage "${extra[@]}"
+      - name: Check it starts
+        run: |
+          set +e
+          timeout 8 xvfb-run -a "dist/$APP-$VERSION-linux-x86_64.AppImage"
+          [ $? = 124 ] || { echo "::error::$APP exited before the timeout"; exit 1; }
+      - name: Check the console program in the AppImage
+        run: |
+          # started under the console program's name (a symlink to the AppImage) it is that program
+          case "$CLI" in cpmdw) fmt=ibm-3740 ;; flexdw) fmt=flex-40x10 ;; *) fmt=adfs-m ;; esac
+          ln -s "$PWD/dist/$APP-$VERSION-linux-x86_64.AppImage" "$RUNNER_TEMP/$CLI"
+          "$RUNNER_TEMP/$CLI" --version
+          "$RUNNER_TEMP/$CLI" new "$RUNNER_TEMP/t.img" "--format=$fmt" --quiet
+          "$RUNNER_TEMP/$CLI" info "$RUNNER_TEMP/t.img"
+      - name: Package the .deb (the system's Qt)
+        run: |
+          # The .deb uses the system's libraries, so it has no bundled ones to list in Help > Licences: build its
+          # program without the AppImage's licences-bundled.qrc (qmake and cmake only pick it up when it exists)
+          mv licences-bundled.qrc "$RUNNER_TEMP/"
+          mkdir build-deb
+          (cd build-deb && "$QMAKE" "../$APP.pro" CONFIG+=release PREFIX=/usr && make -j"$(nproc)")
+          mkdir build-deb-cli
+          (cd build-deb-cli && "$QMAKE" "../$CLI.pro" CONFIG+=release PREFIX=/usr && make -j"$(nproc)")
+          bash core/ci/make-deb.sh build-deb dist
+      - name: Check the .deb installs and starts
+        run: |
+          sudo apt-get install -y -qq "./dist/$APP-$VERSION-linux-amd64.deb"
+          set +e
+          timeout 8 xvfb-run -a "$APP"
+          [ $? = 124 ] || { echo "::error::the installed $APP exited before the timeout"; exit 1; }
+          set -e
+          "$CLI" --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5        # for release-notes/<tag>.md, and the source
+        with:
+          submodules: recursive          # core/ is DiskWranglerCore
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Make the complete source archive
+        # GitHub's own "Source code" archives of a release leave out the core/ submodule
+        run: bash core/ci/source-archive.sh dist "${GITHUB_REPOSITORY##*/}-$GITHUB_REF_NAME-source"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # a tag with a suffix (v1.0.0-beta.1, v1.0.0-rc.1) is published as a pre-release
+          pre=()
+          case "$GITHUB_REF_NAME" in *-*) pre=(--prerelease) ;; esac
+          # the notes: release-notes/<tag>.md when the repo has one for this tag, else GitHub's generated ones
+          notes=(--generate-notes)
+          [ -f "release-notes/$GITHUB_REF_NAME.md" ] && notes=(--notes-file "release-notes/$GITHUB_REF_NAME.md")
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+              "${notes[@]}" "${pre[@]}"

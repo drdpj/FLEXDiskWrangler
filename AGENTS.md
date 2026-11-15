@@ -77,9 +77,10 @@ A new source file goes in both `.pro` files that need it, `CMakeLists.txt`, and 
 (APP_VERSION from `git describe`). No source file may have the name of one of the core's (qmake puts every object
 in one folder).
 
-Not yet here (they come with a release): the CI workflow (the family's shared `build.yml` checks the console
-program with `new`, which `flexdw` has since flex-2) and a Windows installer (its AppId lives in the core's
-`ci/installer.iss`, a core change).
+CI: `.github/workflows/build.yml` is the family's shared workflow, identical in the three repos (Windows, macOS and
+Linux packages on every push; a release on a `v*` tag). Not yet here: the Windows installer, built on release tags and
+Run workflow, needs an AppId for this program in the core's `ci/installer.iss` (a core change), so those runs stop at
+that step until the core has one.
 
 ## Test
 ```
