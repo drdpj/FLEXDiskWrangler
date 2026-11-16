@@ -10,6 +10,9 @@ from them, including the other Disk Wranglers
 ([Acorn](https://github.com/drdpj/AcornDiskWrangler), [CP/M](https://github.com/drdpj/CPMDiskWrangler)) through the
 [retro-files](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/retro-files-format.md) format.
 
+It also reads discs of **UniFLEX**, TSC's multi-user Unix-like system for the same 6809 machines: their directory
+trees, files, permissions and owners, and a check of the whole file system (see below).
+
 **Changes are made the way FLEX makes them.** Where a new file's entry goes, which sectors it takes, how the directory
 grows, what deleting leaves, the sector map of a random-access file, the System Information Record after each change,
 and how a new disc is laid out were all read from FLEX itself (FLEX 2.0 and three FLEX 9s, on the sample discs), so a
@@ -40,7 +43,8 @@ Help > About shows the version; Help > Licences shows the licences of the progra
 | Image | |
 |---|---|
 | Raw FLEX image (`.dsk`, as most FLEX emulators write it), in whatever geometry the disc's System Information Record gives (tried on discs of 20 to 77 tracks and 10 to 36 sectors a track) | read and write |
-| OS-9 and UniFLEX discs | recognised and named, not opened |
+| Raw UniFLEX image (`.dsk`: 8-inch floppies and Winchester hard discs, as emulators write them) | read only |
+| OS-9 discs | recognised and named, not opened |
 
 A disc with a broken chain opens read-only with the fault named (Tools > Check disc); a file whose chain is broken is
 shown in red with the reason, and can't be copied out. A file whose size isn't the geometry its System Information
@@ -62,6 +66,18 @@ Record gives opens read-only too.
   image, or Tools > Copy boot loader from), put FLEX.SYS on the disc, and link the loader to it (Tools > Link boot
   loader to file), as FLEX's LINK command does.
 
+## UniFLEX discs
+A UniFLEX disc opens as a tree of folders. The columns show each file's access (`rwxr-x`: the owner's read, write
+and execute, then everyone else's, and `s` when it runs with its owner's user id), owner, links, size, the time it was
+last changed and its file descriptor node (fdn). View shows UniFLEX text with its CR line ends; Extract, dragging out
+and Copy give the files exactly as stored, names as they are (UniFLEX names are case-sensitive), folders as folders.
+Properties and Disc information show what the disc records; Tools > Check disc checks the whole file system: every
+file's blocks, the directories, link counts, the free list and the free fdns.
+
+UniFLEX discs are **read-only** in this version: nothing on them can be changed. What a UniFLEX disc holds was read
+from TSC's own kernel and formatter sources ([docs/uniflex-format.md](docs/uniflex-format.md)), kept with the disc
+images by the **FLEX UniFLEX User Group** and **The Missing 6809 UniFLEX Archive**, whose work made this possible.
+
 ## Files on your computer
 Files come out exactly as they are on the disc, so that copying a file out and back in gives the same file: a FLEX
 text file keeps its CR line ends and its space compression (a TAB followed by the number of spaces). The viewer
@@ -78,6 +94,7 @@ and the file gets the date from the directory.
     flexdw put DISC.DSK notes.txt /           # add a file
     flexdw rm DISC.DSK OLD.TXT                # delete one
     flexdw new NEW.DSK --format=flex-40x10 --title=WORK     # a new disc (flexdw new --list: the shapes)
+    flexdw ls UNIFLEX.DSK -R                  # a UniFLEX disc's whole tree
 
 Add `--json` for output a program can read. The commands are those of the other Disk Wranglers' console programs
 ([cli.md](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/cli.md)).

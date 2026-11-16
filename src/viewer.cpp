@@ -27,11 +27,46 @@ public:
     QString id() const override { return "flextext"; }
     QString name() const override { return "Text"; }
     int order() const override { return 0; }
-    int accepts(const QByteArray &d, const QVariantMap &) const override { return Flex::looksLikeText(d) ? 2 : 0; }
+    int accepts(const QByteArray &d, const QVariantMap &ctx) const override {
+        return ctx.value("fs").toString() != "uniflex" && Flex::looksLikeText(d) ? 2 : 0;
+    }
     dw::ViewResult render(const QByteArray &d, const QVariantMap &) const override {
         dw::ViewResult r;
         r.text = Flex::expandText(d);
         r.note = "FLEX text: CR line ends, runs of spaces expanded";
+        return r;
+    }
+};
+
+// UniFLEX text: lines end in CR (as on the sample discs; LF and CR LF read too), TABs are TABs.
+class UniFlexTextViewer : public dw::FileViewer {
+public:
+    QString id() const override { return "uniflextext"; }
+    QString name() const override { return "Text"; }
+    int order() const override { return 0; }
+    int accepts(const QByteArray &d, const QVariantMap &ctx) const override {
+        if (ctx.value("fs").toString() != "uniflex") return 0;
+        int text = 0, other = 0, ends = 0;
+        for (char ch : d) {
+            const uchar c = uchar(ch);
+            if (c == 0x0D || c == 0x0A) { ++ends; ++text; }
+            else if ((c >= 0x20 && c < 0x7F) || c == 0x09 || c == 0x0C) ++text;
+            else if (c) ++other;
+        }
+        return text > 0 && ends > 0 && other * 50 <= text ? 2 : 0;
+    }
+    dw::ViewResult render(const QByteArray &d, const QVariantMap &) const override {
+        dw::ViewResult r;
+        QString s;
+        s.reserve(d.size());
+        for (int i = 0; i < d.size(); ++i) {
+            const uchar c = uchar(d[i]);
+            if (c == 0x0D) { s += '\n'; if (i + 1 < d.size() && d[i + 1] == '\n') ++i; continue; }
+            if (c == 0x00) continue;
+            s += QChar(c);
+        }
+        r.text = s;
+        r.note = "UniFLEX text: CR line ends";
         return r;
     }
 };
@@ -42,11 +77,12 @@ const dw::ViewerRegistry &flexViewers() {
         dw::addDefaultViewers(r);
         r.remove("plain");                      // FLEX's own Text replaces the core's
         r.add(std::make_shared<FlexTextViewer>());
+        r.add(std::make_shared<UniFlexTextViewer>());
         return r;
     }();
     return reg;
 }
 } // namespace
 
-ViewerDialog::ViewerDialog(const QString &title, const QByteArray &data, QWidget *parent)
-    : dw::ViewerDialog(flexViewers(), title, data, parent) {}
+ViewerDialog::ViewerDialog(const QString &title, const QByteArray &data, QWidget *parent, const QString &fs)
+    : dw::ViewerDialog(flexViewers(), title, data, parent, QVariantMap{{"fs", fs}}) {}

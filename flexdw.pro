@@ -17,8 +17,8 @@ unix:!macx {
     target.path = $$PREFIX/bin
     INSTALLS += target
 }
-SOURCES += src/cli/main.cpp src/cli/backend.cpp src/flexdisk.cpp src/flexvolume.cpp src/hostpolicy.cpp
-HEADERS += src/cli/backend.h src/flexdisk.h src/flexvolume.h src/hostpolicy.h
+SOURCES += src/cli/main.cpp src/cli/backend.cpp src/flexdisk.cpp src/flexvolume.cpp src/uniflexfs.cpp src/uniflexvolume.cpp src/hostpolicy.cpp
+HEADERS += src/cli/backend.h src/flexdisk.h src/flexvolume.h src/uniflexfs.h src/uniflexvolume.h src/hostpolicy.h
 !exists(core/diskwrangler/cli/commands.cpp): error("core/ is empty or too old: run 'git submodule update --init'")
 INCLUDEPATH += core
 include(core/diskwrangler-cli.pri)

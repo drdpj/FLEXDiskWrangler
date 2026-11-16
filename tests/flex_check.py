@@ -801,9 +801,14 @@ def compare(flexdw, images):
         name = os.path.basename(img)
         code, ls = flexdw_json(flexdw, 'ls', img)
         if not mine['flex']:
-            if code == 0:
-                print('%s: flexdw reads it, this reader says it is not FLEX' % name)
+            # flexdw may read it as another filesystem (UniFLEX: uniflex_check.py checks that reading), never as FLEX
+            _, info = flexdw_json(flexdw, 'info', img)
+            chosen = ((info.get('result') or {}).get('chosen') or {}).get('fsId')
+            if code == 0 and chosen == 'flex':
+                print('%s: flexdw reads it as FLEX, this reader says it is not FLEX' % name)
                 bad += 1
+            elif code == 0:
+                print('%s: not FLEX; flexdw reads it as %s' % (name, chosen))
             else:
                 print('%s: not FLEX, and flexdw agrees (exit %d)' % (name, code))
             continue

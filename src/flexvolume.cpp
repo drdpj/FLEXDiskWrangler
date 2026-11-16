@@ -261,12 +261,40 @@ void OpenedDisc::noteFileState() {
 void OpenedDisc::detach() {
     m_disc.clearMounts();
     m_disk.reset();
+    m_ufs.reset();
     m_checkOk = true;
     m_exact = true;
 }
 
 FlexVolume *OpenedDisc::volume() const {
-    return m_disc.mounts().isEmpty() ? nullptr : static_cast<FlexVolume *>(m_disc.mounts()[0].vol.get());
+    return m_disk && !m_disc.mounts().isEmpty() ? static_cast<FlexVolume *>(m_disc.mounts()[0].vol.get()) : nullptr;
+}
+
+bool OpenedDisc::open(const QString &path, const UniFlex::ProbeResult &r, QString *err) {
+    if (!m_img.open(path, err)) return false;
+    noteFileState();
+    return attach(r, err);
+}
+
+// The file as it is, in 512-byte blocks (a part block at its end padded): the Fs knows which blocks the volume needs.
+bool OpenedDisc::attach(const UniFlex::ProbeResult &r, QString *err) {
+    if (m_img.kind() != dw::device::Kind::Raw) { *err = "only raw UniFLEX images can be read so far"; return false; }
+    dw::device::RawLayout l;
+    l.seclen = UniFlex::BlockSize;
+    l.sectrk = 1;
+    l.cyls = int((r.fileBytes + UniFlex::BlockSize - 1) / UniFlex::BlockSize);
+    l.heads = 1;
+    l.firstId = 1;
+    if (!m_img.setRawLayout(l, err)) return false;
+    detach();
+    m_disc.setContainer(&m_img);
+    auto fs = std::make_unique<UniFlex::Fs>();
+    if (!fs->attach(dw::device::Linear(&m_img, dw::device::SideOrder(), l.bytes()), err)) return false;
+    m_ufs = std::move(fs);
+    m_checkOk = m_ufs->check().ok();
+    m_exact = r.exact;
+    m_disc.addMount({"UniFLEX", std::make_shared<UniFlex::UniFlexVolume>(m_ufs.get()), true, UniFlex::UniFlexVolume::ReadOnlyText, "uniflex"});
+    return true;
 }
 
 bool OpenedDisc::attach(const ProbeResult &r, QString *err) {
@@ -288,6 +316,7 @@ const char *const OpenedDisc::GeometryText = "the image file's size doesn't matc
 
 QString OpenedDisc::readOnlyWhy(int mount) const {
     if (m_disc.mounts().isEmpty()) return "no disc";
+    if (m_ufs) return UniFlex::UniFlexVolume::ReadOnlyText;
     if (!m_checkOk) return "the disc has errors (Tools > Check disc)";
     if (!m_exact) return GeometryText;
     const dw::fs::Disc::Mount m = m_disc.mounts().value(mount);
@@ -296,6 +325,13 @@ QString OpenedDisc::readOnlyWhy(int mount) const {
 
 // The saved copy, before it replaces anything: the disc read from it again, checked, and holding as many files.
 bool OpenedDisc::checkWritten(dw::device::Container &written, QString *err) const {
+    if (m_ufs) {
+        UniFlex::Fs f;
+        QString e;
+        if (!f.attach(dw::device::Linear(&written, dw::device::SideOrder(), m_ufs->linear().size()), &e)) { *err = "the saved copy can't be read back: " + e; return false; }
+        if (f.nodes().size() != m_ufs->nodes().size()) { *err = "the saved copy does not hold the same files"; return false; }
+        return true;
+    }
     if (!m_disk) return true;
     Disk d;
     QString e;
@@ -307,6 +343,7 @@ bool OpenedDisc::checkWritten(dw::device::Container &written, QString *err) cons
 }
 
 bool OpenedDisc::save(bool backup, QString *err) {
+    if (m_ufs) { *err = UniFlex::UniFlexVolume::ReadOnlyText; return false; }
     if (m_disk) {
         const dw::fs::Report r = m_disk->check();
         if (!r.ok()) { *err = "the disc would not be consistent.\n\n" + r.errors.mid(0, 10).join("\n"); return false; }
@@ -325,8 +362,8 @@ bool OpenedDisc::save(bool backup, QString *err) {
 }
 
 bool OpenedDisc::saveAs(const QString &path, dw::device::Kind kind, QString *err) {
-    if (kind != dw::device::Kind::Raw) { *err = "FLEX discs are saved as raw images (.dsk) so far."; return false; }
-    const bool ok = !m_disk || m_disk->check().ok();
+    if (kind != dw::device::Kind::Raw) { *err = "FLEX and UniFLEX discs are saved as raw images (.dsk) so far."; return false; }
+    const bool ok = m_ufs ? true : !m_disk || m_disk->check().ok();
     auto verify = [this, ok](dw::device::Container &written, QString *e) { return !ok || checkWritten(written, e); };
     if (!m_img.saveAs(path, kind, err, verify)) return false;
     noteFileState();
@@ -492,18 +529,6 @@ QVector<dw::fs::Candidate> FlexProbe::probe(const dw::fs::ProbeContext &ctx) con
 
 static int u24(const QByteArray &b, int off) { return int(uchar(b[off])) << 16 | int(uchar(b[off + 1])) << 8 | int(uchar(b[off + 2])); }
 
-// A NUL-padded name of printable characters, at least one long.
-static bool padded(const QByteArray &b) {
-    int n = 0;
-    while (n < b.size() && b[n] != '\0') {
-        if (uchar(b[n]) < 0x20 || uchar(b[n]) > 0x7E) return false;
-        n++;
-    }
-    if (n == 0) return false;
-    for (int i = n; i < b.size(); ++i) if (b[i] != '\0') return false;
-    return true;
-}
-
 QVector<dw::fs::Candidate> OtherSystemsProbe::probe(const dw::fs::ProbeContext &ctx) const {
     if (!ctx.container) return {};
     const qint64 size = ctx.size();
@@ -526,18 +551,6 @@ QVector<dw::fs::Candidate> OtherSystemsProbe::probe(const dw::fs::ProbeContext &
         c.evidence << "its first sector is an OS-9 identification sector";
         out << c;
     }
-    // UniFLEX: the SIR in block 1 (byte 512) holds the file system's name at 26 and the pack's at 40, 14 bytes each
-    const QByteArray sir = ctx.stored(512, 64);
-    if (out.isEmpty() && size >= 1024 && padded(sir.mid(26, 14)) && padded(sir.mid(40, 14))) {
-        dw::fs::Candidate c;
-        c.fsId = "uniflex";
-        c.name = "UniFLEX";
-        c.description = QString("a UniFLEX disc (\"%1\")").arg(QString::fromLatin1(sir.mid(26, 14)).remove(QChar('\0')));
-        c.tier = dw::fs::Tier::Possible;
-        c.supported = false;
-        c.evidence << "block 1 names a UniFLEX file system and pack";
-        out << c;
-    }
     return out;
 }
 
@@ -547,8 +560,9 @@ dw::fs::Verdict verdict(dw::device::Container &img, const QString &path) {
     ctx.suffix = QFileInfo(path).suffix().toLower();
     ctx.container = &img;
     const FlexProbe flex;
+    const UniFlex::UniFlexProbe uniflex;
     const OtherSystemsProbe other;
-    return dw::fs::detect(ctx, {&flex, &other});
+    return dw::fs::detect(ctx, {&flex, &uniflex, &other});
 }
 
 } // namespace Flex

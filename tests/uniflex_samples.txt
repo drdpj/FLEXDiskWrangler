@@ -1,0 +1,150 @@
+# The UniFLEX sample discs (testdata/UniFLEX/*.dsk; C012_1.DSK and C014.DSK in testdata/FLEXDisks) and what FLEX Disk
+# Wrangler's check says of each: "clean", or the start of every error it names, one to a line. `uniflex_check.py
+# samples` holds the program to this list (each line must start one of the check's errors, and each error must start
+# with one of the lines) and compares every disc with the independent reader. docs/uniflex-format.md, "The samples",
+# says what the damage is.
+account.dsk
+    /: its link count is 9, but 8 directory entries name it
+    the free list names block 21040, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1704 free blocks, but its free list holds, as far as it can be followed, 5
+    the SIR counts 567 free fdns, but 568 are free
+clock.dsk
+    /: its link count is 3, but 2 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1946 free blocks, but its free list holds, as far as it can be followed, 247
+    the SIR counts 585 free fdns, but 586 are free
+copymaster.dsk
+    /: its link count is 3, but 2 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1989 free blocks, but its free list holds, as far as it can be followed, 290
+    the SIR counts 589 free fdns, but 590 are free
+Copy of emptydisk.dsk
+    clean
+Copy of fd0.dsk
+    clean
+dmp.dsk
+    /: its link count is 6, but 5 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1722 free blocks, but its free list holds, as far as it can be followed, 23
+    the SIR counts 557 free fdns, but 558 are free
+dsdd8inch.dsk
+    clean
+dssd8inch.dsk
+    clean
+dynamite.dsk
+    /: its link count is 5, but 4 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1902 free blocks, but its free list holds, as far as it can be followed, 203
+    the SIR counts 561 free fdns, but 562 are free
+empty_CMI5619.dsk
+    the image ends at block 26111, but the volume goes on to block 29171
+    the free list names block 26112, past the end of the image (in the list held in block 26072)
+    the SIR counts 28224 free blocks, but its free list holds, as far as it can be followed, 25164
+    the SIR counts 7558 free fdns, but 7534 are free
+emptydisk.dsk
+    /: its link count is 3, but 2 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1989 free blocks, but its free list holds, as far as it can be followed, 290
+    the SIR counts 589 free fdns, but 590 are free
+extra_1.dsk
+    /cc/ccc.xxx: its link count is 1, but 2 directory entries name it
+    /cc/pass1.c/v: its link count is 1, but 2 directory entries name it
+extra_2.dsk
+    /documents/gary/cobol/dictionary/vocab_x: its link count is 1, but 4 directory entries name it
+fd0.dsk
+    the SIR counts 329 free fdns, but 322 are free
+fd0_nopassword.dsk
+    clean
+fd1.dsk
+    /: its link count is 3, but 2 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1989 free blocks, but its free list holds, as far as it can be followed, 290
+    the SIR counts 589 free fdns, but 590 are free
+fd2.dsk
+    /: its link count is 3, but 2 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1989 free blocks, but its free list holds, as far as it can be followed, 290
+    the SIR counts 589 free fdns, but 590 are free
+fd3.dsk
+    /: its link count is 3, but 2 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1989 free blocks, but its free list holds, as far as it can be followed, 290
+    the SIR counts 589 free fdns, but 590 are free
+fdnewtest.dsk
+    /: no . entry
+    /: no .. entry
+    /: its link count is 5, but 0 directory entries name it
+    the SIR counts 91 free fdns, but 96 are free
+floppydump2.dsk
+    the SIR counts 432 free fdns, but 431 are free
+    the SIR's list of free fdns names fdn 194, which is in use
+floppydump.dsk
+    the SIR counts 432 free fdns, but 431 are free
+    the SIR's list of free fdns names fdn 194, which is in use
+init.dsk
+    /: its link count is 4, but 3 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1834 free blocks, but its free list holds, as far as it can be followed, 135
+    the SIR counts 558 free fdns, but 559 are free
+INITIALIZERII.dsk
+    the free list names block 1019 twice (in the SIR's list)
+    the SIR counts 1430 free blocks, but its free list holds, as far as it can be followed, 17
+    the SIR counts 430 free fdns, but 429 are free
+McCoshCandFortran.dsk
+    clean
+Oldfd0.dsk
+    clean
+pascal.dsk
+    /: its link count is 3, but 2 directory entries name it
+    /core: its entry names fdn 4, which is free
+    the free list names block 82 twice (in the SIR's list)
+    the SIR counts 1952 free blocks, but its free list holds, as far as it can be followed, 25
+    the SIR counts 582 free fdns, but 581 are free
+pw03.dsk
+    clean
+spooler.dsk
+    /: its link count is 4, but 3 directory entries name it
+    the free list names block 10740789, outside the volume (76-2079) (in the list held in block 766)
+    the SIR counts 1889 free blocks, but its free list holds, as far as it can be followed, 190
+    the SIR counts 559 free fdns, but 560 are free
+ssdd8inch.dsk
+    /: no . entry
+    /: no .. entry
+    /: its link count is 2, but 0 directory entries name it
+    the SIR counts 1192 free blocks, but its free list holds 93
+sssd8inch.dsk
+    /: no . entry
+    /: no .. entry
+    /: its link count is 2, but 0 directory entries name it
+    the SIR counts 595 free blocks, but its free list holds 96
+ufsources.dsk
+    the SIR counts 9910 free blocks, but its free list holds 11
+    block 6443 is in both /kernal/core and the free list
+    block 6543 is in both /kernal/core and the free list
+    block 6544 is in both /kernal/core and the free list
+    block 6545 is in both /kernal/core and the free list
+    block 6546 is in both /kernal/core and the free list
+    block 6595 is in both /kernal/core and the free list
+    block 6607 is in both /kernal/core and the free list
+    block 6627 is in both /kernal/core and the free list
+    block 6628 is in both /kernal/core and the free list
+    block 6629 is in both /kernal/core and the free list
+    ... and 1 more block in two places
+UNIFLEX.dsk
+    clean
+UnixUtilsforUniFLEX.dsk
+    clean
+w_boot.dsk
+    clean
+wd0.dsk
+    clean
+wd1.dsk
+    clean
+wd2.dsk
+    clean
+C012_1.DSK
+    the SIR counts 324 free fdns, but 325 are free
+C014.DSK
+    /randy
+    /modem
+    /uniflex

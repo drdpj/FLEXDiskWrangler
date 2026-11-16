@@ -19,7 +19,8 @@
 // Flex::OpenedDisc. The kit does the rows, the selection, the title, Save / Save As / Revert / Close, Extract,
 // Properties' plumbing, Check and opening; this class fills its hooks with FLEX's words, columns and dialogs. Menus,
 // the button bar and the context menu keep the family's order (CP/M Disk Wrangler's AGENTS.md, "The window").
-// Series flex-1 only reads: the items that change a disc are there, greyed out, with the reason in the status line.
+// Two panes, one shown at a time (no tabs): "flex" (a flat list) and "uniflex" (the tree of a UniFLEX disc, read-only
+// in series uniflex-1: the items that change a disc are greyed out, with the reason in the status line).
 #pragma once
 
 #include <diskwrangler/ui/discwindow.h>
@@ -29,7 +30,7 @@
 class QAction;
 
 // The file list: the kit's pane, dragging files out (the retro-files format, written only when a target asks), taking
-// dropped disc images in a window with no FLEX disc, and files dropped on a disc that can be written.
+// dropped disc images in a window with no disc, and files dropped on a disc that can be written.
 class FlexPane : public dw::ui::VolumePane {
     Q_OBJECT
 public:
@@ -49,7 +50,9 @@ public:
 
     Flex::OpenedDisc *document() const override { return const_cast<Flex::OpenedDisc *>(&m_doc); }
     dw::app::AppInfo appInfo() const override;
-    bool hasDisc() const { return m_doc.disk() != nullptr; }
+    bool hasDisc() const { return m_doc.disk() != nullptr || m_doc.uniflex() != nullptr; }   // a FLEX or UniFLEX disc
+    bool hasFlex() const { return m_doc.disk() != nullptr; }
+    bool hasUniflex() const { return m_doc.uniflex() != nullptr; }
     // What a drag, Copy and View take from the disc.
     dw::DragSpec dragSpec() const;
     using DiscWindow::writable;
@@ -79,7 +82,8 @@ public:
 
 protected:
     ActionSpec actionSpec(Act a) const override;
-    QStringList paneGroups() const override { return {"flex"}; }
+    QStringList paneGroups() const override { return {"flex", "uniflex"}; }
+    bool paneShown(const QString &group) const override { return (group == "uniflex") == hasUniflex(); }
     dw::ui::PaneLayout paneLayout(const QString &group) const override;
     dw::ui::VolumePane *createPane(const QString &group) override;
     QList<QAction *> contextActions() const override;
@@ -107,9 +111,11 @@ private slots:
     void linkBootLoaderSelected();
 
 private:
-    FlexPane *flexPane() const { return static_cast<FlexPane *>(pane()); }
+    void uniflexProperties(const QVector<Item> &items);
+    void uniflexInfo();
+    void decorateUniflexRow(QTreeWidgetItem *row, const dw::fs::Entry &e) const;
     Flex::OpenedDisc m_doc;
-    QString m_notFlex;                 // why the open file wasn't read as FLEX (the status line says it)
+    QString m_notFlex;                 // why the open file wasn't read (the status line says it)
     QAction *m_actCheck = nullptr, *m_actInfo = nullptr, *m_actLabel = nullptr, *m_optBackup = nullptr;
     QAction *m_actBoot = nullptr, *m_actLink = nullptr;
 };

@@ -32,11 +32,13 @@ class Image : public OpenedImage {
 public:
     Flex::OpenedDisc od;
     Flex::ProbeResult probe;
+    UniFlex::ProbeResult ufProbe;
 
     dw::fs::Disc &disc() override { return od.disc(); }
     bool save(bool backup, QString *err) override { return od.save(backup, err); }
-    QString volName(int) const override { return "flex"; }
+    QString volName(int) const override { return od.uniflex() ? "uniflex" : "flex"; }
     QJsonObject app() const override {
+        if (const UniFlex::Fs *fs = od.uniflex()) return uniflexApp(*fs);
         QJsonObject o;
         const Flex::Sir &s = probe.sir;
         o["label"] = s.labelText();
@@ -54,8 +56,37 @@ public:
         }
         return o;
     }
-    // The check's errors are flexdw's own (exit 4); a file whose size isn't its SIR's geometry can't be written
-    QString readOnlyWhy() const override { return od.writableGeometry() ? QString() : Flex::OpenedDisc::GeometryText; }
+    QJsonObject uniflexApp(const UniFlex::Fs &fs) const {
+        const UniFlex::Sir &s = fs.sir();
+        QJsonObject o;
+        auto time = [](quint32 t) { const QDateTime d = UniFlex::timeOf(t); return d.isValid() ? d.toString(Qt::ISODate) : QString(); };
+        o["packName"] = s.packNameText();
+        o["fsName"] = s.fsNameText();
+        o["fsNumber"] = s.number;
+        o["created"] = time(s.created);
+        o["updated"] = time(s.updated);
+        o["volumeBlocks"] = s.volumeBlocks();
+        o["fdnBlocks"] = s.fdnBlocks;
+        o["fdns"] = s.fdnCount();
+        o["freeBlocks"] = s.freeBlocks;
+        o["freeFdns"] = s.freeFdns;
+        o["swapStart"] = s.swapStart;
+        o["swapBlocks"] = s.swapSize;
+        o["winchester"] = s.winchester();
+        o["density"] = s.density;
+        o["sides"] = s.sides;
+        o["imageBlocks"] = fs.imageBlocks();
+        o["exactSize"] = ufProbe.exact;
+        o["files"] = fs.fileCount();
+        o["directories"] = fs.dirCount() + 1;
+        return o;
+    }
+    // The check's errors are flexdw's own (exit 4); a file whose size isn't its SIR's geometry can't be written, nor
+    // can a UniFLEX disc (read-only in this version)
+    QString readOnlyWhy() const override {
+        if (od.uniflex()) return UniFlex::UniFlexVolume::ReadOnlyText;
+        return od.writableGeometry() ? QString() : Flex::OpenedDisc::GeometryText;
+    }
 };
 
 } // namespace
@@ -71,14 +102,21 @@ OpenOutcome Backend::open(const QString &path, const OpenOptions &o) {
     const dw::fs::Verdict v = Flex::verdict(c, path);
     resolveVerdict(v, o.fs, &out);
     if (out.status != OpenOutcome::Ok) {
-        if (out.status == OpenOutcome::Unrecognised && out.message.isEmpty()) out.message = "not a FLEX disc";
+        if (out.status == OpenOutcome::Unrecognised && out.message.isEmpty()) out.message = "not a FLEX or UniFLEX disc";
         return out;
     }
     const dw::fs::Candidate &cand = v.ranked[out.chosen];
     if (!cand.supported) { out.status = OpenOutcome::Unsupported; out.message = "this is " + cand.description + ": FLEX Disk Wrangler can't open it"; return out; }
     std::unique_ptr<Image> img(new Image);
-    img->probe = std::any_cast<Flex::ProbeResult>(cand.data);
-    if (!img->od.open(path, img->probe, &err)) { out.status = OpenOutcome::Failed; out.message = err; return out; }
+    bool opened;
+    if (cand.fsId == "uniflex") {
+        img->ufProbe = std::any_cast<UniFlex::ProbeResult>(cand.data);
+        opened = img->od.open(path, img->ufProbe, &err);
+    } else {
+        img->probe = std::any_cast<Flex::ProbeResult>(cand.data);
+        opened = img->od.open(path, img->probe, &err);
+    }
+    if (!opened) { out.status = OpenOutcome::Failed; out.message = err; return out; }
     out.image = std::move(img);
     return out;
 }

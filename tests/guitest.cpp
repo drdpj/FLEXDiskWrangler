@@ -15,10 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-// guitest - FLEX Disk Wrangler's window on the kit: opening (a FLEX disc, an OS-9 disc it can't open, noise), the
-// menus in the family's order, what is enabled on a disc that is only read, the rows and their cells, View with
-// FLEX's text view, Extract (the files as stored, named in lower case, dated), Copy, Properties and Disc information.
-//   guitest <dir made by flex_check.py make>        (QT_QPA_PLATFORM=offscreen)
+// guitest - FLEX Disk Wrangler's window on the kit: opening (a FLEX disc, a UniFLEX disc, an OS-9 disc it can't open,
+// noise), the menus in the family's order, what is enabled, the rows and their cells, View with FLEX's and UniFLEX's
+// text views, Extract (the files as stored, FLEX names in lower case, UniFLEX names as they are, dated), Copy,
+// Properties and Disc information, and the changes FLEX Disk Wrangler makes to a FLEX disc.
+//   guitest <dir made by flex_check.py make and uniflex_check.py make>        (QT_QPA_PLATFORM=offscreen)
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
@@ -29,6 +30,9 @@
 #include <QMimeData>
 #include <QStatusBar>
 #include <QTemporaryDir>
+#include <QTabBar>
+#include <QTabWidget>
+#include <QTimeZone>
 #include <QTreeWidget>
 #include <cstdio>
 
@@ -56,6 +60,17 @@ static QMenu *menu(MainWindow *w, const QString &title) {
     return nullptr;
 }
 
+static QTreeWidgetItem *childNamed(QTreeWidgetItem *p, const QString &name) {
+    for (int i = 0; p && i < p->childCount(); ++i) if (p->child(i)->text(0) == name) return p->child(i);
+    return nullptr;
+}
+
+static QAction *menuAction(MainWindow *w, const QString &menuTitle, const QString &text) {
+    QMenu *m = menu(w, menuTitle);
+    for (QAction *a : m ? m->actions() : QList<QAction *>()) if (a->text() == text) return a;
+    return nullptr;
+}
+
 static QTreeWidgetItem *rowNamed(QTreeWidget *t, const QString &name) {
     QTreeWidgetItem *root = t->topLevelItem(0);
     for (int i = 0; root && i < root->childCount(); ++i) if (root->child(i)->text(0) == name) return root->child(i);
@@ -73,7 +88,7 @@ int main(int argc, char **argv) {
     auto *w = new MainWindow;
     w->show();
     CHECK(w->windowTitle().contains("FLEX Disk Wrangler"), "title: " + w->windowTitle());
-    CHECK(w->statusBar()->currentMessage().startsWith("Open a FLEX disc image"), "status: " + w->statusBar()->currentMessage());
+    CHECK(w->statusBar()->currentMessage().startsWith("Open a FLEX or UniFLEX disc image"), "status: " + w->statusBar()->currentMessage());
     CHECK(!w->action(Act::View)->isEnabled() && !w->action(Act::Extract)->isEnabled() && w->action(Act::Open)->isEnabled(), "nothing to view or extract");
 
     printf("the menus, in the family's order\n");
@@ -222,6 +237,69 @@ int main(int argc, char **argv) {
           "a loader from a disc that has none: refused: " + e5);
     delete w5;
     delete w3;
+
+    printf("a UniFLEX disc (uf-basic.dsk): a tree, read-only\n");
+    auto *w6 = new MainWindow;
+    w6->show();
+    CHECK(w6->openFile(dir + "/uf-basic.dsk") && w6->hasUniflex() && !w6->hasFlex(), "opened as UniFLEX");
+    dw::ui::VolumePane *up = w6->pane("uniflex");
+    CHECK(up && w6->tabWidget()->currentWidget() == up && w6->tabWidget()->count() == 1 && !w6->tabWidget()->tabBar()->isVisible(),
+          "the UniFLEX pane, alone, no tabs");
+    const QString ust = w6->statusBar()->currentMessage();
+    CHECK(ust.startsWith("UniFLEX, 600 blocks - 12 files in 5 directories") && ust.contains("read-only"), "status: " + ust);
+    QTreeWidgetItem *uroot = up ? up->topLevelItem(0) : nullptr;
+    CHECK(uroot && uroot->text(0).contains("uf-basic.dsk") && uroot->text(0).contains("basic"), "root: " + (uroot ? uroot->text(0) : QString()));
+    QTreeWidgetItem *usrc = childNamed(uroot, "src"), *ureadme = childNamed(uroot, "readme"), *uprog = childNamed(uroot, "Prog");
+    QTreeWidgetItem *sub = childNamed(usrc, "sub"), *tty = childNamed(childNamed(uroot, "dev"), "tty0");
+    CHECK(usrc && ureadme && uprog && sub && childNamed(sub, "deep.c") && tty, "rows for the tree: src/sub/deep.c, dev/tty0, readme, Prog");
+    if (ureadme && uprog && tty) {
+        CHECK(ureadme->text(1) == "rw-rw-" && ureadme->text(4).trimmed() == "49" && !ureadme->text(5).isEmpty(), "readme: rw-rw-, 49 bytes, a time");
+        CHECK(uprog->text(1) == "rwxr-x" && uprog->text(2).trimmed() == "3", "Prog: rwxr-x, owner 3");
+        CHECK(tty->text(4) == "character device 3, 1", "dev/tty0: " + tty->text(4));
+    }
+    CHECK(!w6->action(Act::AddFiles)->isEnabled() && !w6->action(Act::Paste)->isEnabled() && w6->action(Act::NewImage)->isEnabled(),
+          "Add files and Paste greyed; New disc image (FLEX) still there");
+    QAction *volName = menuAction(w6, "&Edit", "Volume &name..."), *bootFrom = menuAction(w6, "&Tools", "Copy &boot loader from...");
+    CHECK(volName && !volName->isEnabled() && bootFrom && !bootFrom->isEnabled(), "Volume name and the boot loader greyed");
+    if (ureadme) {
+        up->clearSelection();
+        ureadme->setSelected(true);
+        up->setCurrentItem(ureadme);
+        w6->updateUi();
+        CHECK(w6->action(Act::View)->isEnabled() && w6->action(Act::Extract)->isEnabled() && w6->action(Act::Properties)->isEnabled() &&
+              !w6->action(Act::Rename)->isEnabled() && !w6->action(Act::Delete)->isEnabled(), "a file selected: View, Extract, Properties; no Rename or Delete");
+        w6->viewSelected();
+        ViewerDialog *uv = w6->findChild<ViewerDialog *>();
+        CHECK(uv && uv->viewId() == "uniflextext" && uv->shownText() == "UniFLEX test disc\n\tindented with a TAB\nlast line\n",
+              "UniFLEX text: CR lines, the TAB kept: " + (uv ? uv->viewId() + " " + uv->shownText().left(40) : QString("no dialog")));
+        if (uv) uv->close();
+    }
+    QTemporaryDir uout;
+    int ufiles = 0;
+    QStringList uerrors;
+    QJsonArray ujson;
+    CHECK(w6->extractTo({dw::ui::DiscWindow::Item(0, dw::fs::Path({"src"})), dw::ui::DiscWindow::Item(0, dw::fs::Path({"Prog"}))},
+                        uout.path(), &ufiles, &uerrors, &ujson, &err) && uerrors.isEmpty(), "extract src/ and Prog: " + err + uerrors.join("; "));
+    CHECK(QFileInfo(uout.path() + "/Prog").size() == 768 && QFileInfo(uout.path() + "/src/sub/deep.c").size() == 30 &&
+          QFileInfo(uout.path() + "/src/big.dat").size() == 160 * 512 + 33, "the tree comes out, names as they are: Prog, src/sub/deep.c, src/big.dat");
+    QFile ur(uout.path() + "/src/holey");
+    CHECK(ur.open(QIODevice::ReadOnly) && ur.readAll() == QByteArray(512, 'A') + QByteArray(1024, '\0') + QByteArray(100, 'B'), "holey, its unwritten blocks as zeros");
+    CHECK(QFileInfo(uout.path() + "/Prog").lastModified().toUTC() == QDateTime(QDate(1985, 4, 25), QTime(19, 24, 40), QTimeZone::utc()),
+          "dated from its fdn: " + QFileInfo(uout.path() + "/Prog").lastModified().toUTC().toString(Qt::ISODate));
+    QMetaObject::invokeMethod(w6, "discInfo");
+    CHECK(w6->statusBar()->currentMessage() == "info shown", "Disc information");
+    w6->checkDisc();
+    CHECK(w6->document()->disc().validateAll().ok(), "Check disc: clean");
+    w6->editProperties();
+    CHECK(w6->statusBar()->currentMessage() == "properties shown", "Properties");
+    delete w6;
+
+    auto *w7 = new MainWindow;
+    CHECK(w7->openFile(dir + "/uf-bad-map.dsk") && w7->hasUniflex() && w7->statusBar()->currentMessage().contains("the disc has errors"),
+          "a damaged UniFLEX disc opens, its errors in the status line: " + w7->statusBar()->currentMessage());
+    QTreeWidgetItem *bigRow = childNamed(childNamed(w7->pane("uniflex")->topLevelItem(0), "src"), "big.dat");
+    CHECK(bigRow && bigRow->toolTip(0).contains("outside the volume"), "the broken file says why: " + (bigRow ? bigRow->toolTip(0) : QString()));
+    delete w7;
 
     printf("discs that aren't FLEX\n");
     auto *w2 = new MainWindow;

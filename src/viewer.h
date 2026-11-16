@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-// viewer.h - View: the core's viewer dialog with FLEX's text view (spaces expanded, CR line ends) in place of the
-// plain one, and the hex dump.
+// viewer.h - View: the core's viewer dialog with FLEX's text view (spaces expanded, CR line ends) or UniFLEX's (CR
+// line ends, TABs kept) in place of the plain one, and the hex dump.
 #pragma once
 
 #include <diskwrangler/ui/viewerdialog.h>
@@ -24,5 +24,6 @@
 class ViewerDialog : public dw::ViewerDialog {
     Q_OBJECT
 public:
-    ViewerDialog(const QString &title, const QByteArray &data, QWidget *parent = nullptr);
+    // fs: "flex" or "uniflex", whose text the file is
+    ViewerDialog(const QString &title, const QByteArray &data, QWidget *parent = nullptr, const QString &fs = "flex");
 };

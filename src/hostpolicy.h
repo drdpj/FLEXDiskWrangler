@@ -18,7 +18,7 @@
 // hostpolicy.h - how FLEX files become host files and back, for the window and flexdw alike (QtCore only). Files go
 // out exactly as stored (owner, 15 Nov 2026): a text file keeps its CR line ends and FLEX's space compression, so
 // that copying it out and back in gives the same file; the viewer shows text expanded. Host names are the FLEX
-// names in lower case unless that clashes.
+// names in lower case unless that clashes; a UniFLEX name is kept as it is (made safe for the host).
 #pragma once
 
 #include <diskwrangler/xfer/hostread.h>

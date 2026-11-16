@@ -26,8 +26,8 @@ if(APPLE)
     set_source_files_properties(${FLEXDW_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 add_executable(flexdiskwrangler MACOSX_BUNDLE ${FLEXDW_ICNS} src/licences.qrc
-    src/main.cpp src/mainwindow.cpp src/viewer.cpp src/icon.cpp src/hostpolicy.cpp src/flextext.cpp src/flexdisk.cpp src/flexvolume.cpp
-    src/mainwindow.h src/viewer.h src/icon.h src/hostpolicy.h src/flextext.h src/flexdisk.h src/flexvolume.h)
+    src/main.cpp src/mainwindow.cpp src/viewer.cpp src/icon.cpp src/hostpolicy.cpp src/flextext.cpp src/flexdisk.cpp src/flexvolume.cpp src/uniflexfs.cpp src/uniflexvolume.cpp
+    src/mainwindow.h src/viewer.h src/icon.h src/hostpolicy.h src/flextext.h src/flexdisk.h src/flexvolume.h src/uniflexfs.h src/uniflexvolume.h)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/licences-bundled.qrc)   # a release build's library licences (ci/)
     target_sources(flexdiskwrangler PRIVATE licences-bundled.qrc)
 endif()
@@ -46,8 +46,8 @@ if(WIN32)
 endif()
 install(TARGETS flexdiskwrangler RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} BUNDLE DESTINATION .)
 # flexdw: the command-line program (QtCore only; no window, no display). Built beside the GUI program.
-add_executable(flexdw src/cli/main.cpp src/cli/backend.cpp src/flexdisk.cpp src/flexvolume.cpp src/hostpolicy.cpp
-    src/cli/backend.h src/flexdisk.h src/flexvolume.h src/hostpolicy.h)
+add_executable(flexdw src/cli/main.cpp src/cli/backend.cpp src/flexdisk.cpp src/flexvolume.cpp src/uniflexfs.cpp src/uniflexvolume.cpp src/hostpolicy.cpp
+    src/cli/backend.h src/flexdisk.h src/flexvolume.h src/uniflexfs.h src/uniflexvolume.h src/hostpolicy.h)
 target_compile_definitions(flexdw PRIVATE APP_VERSION="${APP_VERSION}")
 target_link_libraries(flexdw DiskWrangler::Cli Qt${QT_VERSION_MAJOR}::Core)
 if(WIN32)

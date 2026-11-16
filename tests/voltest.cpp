@@ -16,14 +16,17 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 // voltest - FLEX Disk Wrangler's discs through DiskWranglerCore's filesystem interface: detection by tiers, the
-// FLEX volume as a dw::fs::Disc (listing, reading, attributes, the check), every change refused in a transaction
-// that leaves nothing staged (series flex-1 only reads), a faithful reload, Save As, and the sample discs.
-//   voltest <dir made by flex_check.py make> [<the sample discs' folder>]
+// FLEX volume as a dw::fs::Disc (listing, reading, attributes, the check), changes made as FLEX makes them, each in a
+// transaction, a faithful reload, Save As, and the sample discs; and UniFLEX discs, read-only (series uniflex-1).
+//   voltest <dir made by flex_check.py make and uniflex_check.py make> [<the sample FLEX discs' folder>
+//           [<the UniFLEX sample discs' folder>]]
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QTimeZone>
 #include <cstdio>
+#include <functional>
 
 #include "../src/flextext.h"
 #include "../src/flexvolume.h"
@@ -46,6 +49,29 @@ static bool openDisc(const QString &path, Flex::OpenedDisc *od, QString *err) {
     const dw::fs::Candidate *c = v.bestCandidate();
     if (!c || c->fsId != "flex") { *err = "not read as FLEX"; return false; }
     return od->open(path, std::any_cast<Flex::ProbeResult>(c->data), err);
+}
+
+static bool openUniflex(const QString &path, Flex::OpenedDisc *od, QString *err, dw::fs::Tier *tier = nullptr) {
+    const dw::fs::Verdict v = verdictOf(path);
+    const dw::fs::Candidate *c = v.bestCandidate();
+    if (!c || c->fsId != "uniflex" || !c->supported) { *err = "not read as UniFLEX"; return false; }
+    if (tier) *tier = c->tier;
+    return od->open(path, std::any_cast<UniFlex::ProbeResult>(c->data), err);
+}
+
+// Everything a UniFLEX Fs holds in memory, as text: what reload() must give back exactly.
+static QString describe(const UniFlex::Fs &fs) {
+    QStringList out;
+    for (const UniFlex::Node &n : fs.nodes()) {
+        QStringList kids;
+        for (int k : n.kids) kids << QString::number(k);
+        out << QString("%1 %2 %3 [%4] {%5}").arg(QString::fromLatin1(n.name.toLatin1().toHex())).arg(n.fdn).arg(n.parent).arg(kids.join(','), n.problem);
+    }
+    for (const UniFlex::Fdn &f : fs.fdns())
+        if (f.busy()) out << QString("fdn %1 %2 %3 %4 %5 %6 %7").arg(f.number).arg(f.mode).arg(f.access).arg(f.links).arg(f.owner).arg(f.size).arg(f.time);
+    const UniFlex::Sir &s = fs.sir();
+    out << QString("sir %1 %2 %3 %4 %5").arg(s.fdnBlocks).arg(s.lastBlock).arg(s.freeBlocks).arg(s.freeFdns).arg(s.listedFree.size());
+    return out.join("\n");
 }
 
 // Everything the Disk holds in memory, as text: what reload() must give back exactly.
@@ -75,7 +101,12 @@ static void detection(const QString &dir) {
         {"pad0.dsk", "flex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
         {"cut.dsk", "flex", dw::fs::Tier::Possible, true, dw::fs::Verdict::Open},
         {"os9.dsk", "os9", dw::fs::Tier::Likely, false, dw::fs::Verdict::Open},
-        {"uniflex.dsk", "uniflex", dw::fs::Tier::Possible, false, dw::fs::Verdict::Open},
+        {"uniflex.dsk", "uniflex", dw::fs::Tier::Possible, false, dw::fs::Verdict::Open},   // a SIR naming UniFLEX, nothing more
+        {"uf-basic.dsk", "uniflex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
+        {"uf-many.dsk", "uniflex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
+        {"uf-bad-chain.dsk", "uniflex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
+        {"uf-short.dsk", "uniflex", dw::fs::Tier::Possible, true, dw::fs::Verdict::Open},
+        {"uf-noroot.dsk", "uniflex", dw::fs::Tier::Possible, true, dw::fs::Verdict::Open},
     };
     for (const Want &w : wants) {
         const dw::fs::Verdict v = verdictOf(dir + "/" + w.file);
@@ -397,14 +428,24 @@ static void names() {
 static void samples(const QString &dir) {
     printf("the sample discs (%s)\n", qPrintable(dir));
     const QStringList damaged = {"C009.DSK", "FLX503TX.DSK", "FLEX2-01.dsk"};
-    const QStringList foreign = {"C012_1.DSK", "C014.DSK", "C014.DSK.CORRUPTED", "C022.DSK", "C022_1.DSK"};
+    const QStringList os9 = {"C022.DSK", "C022_1.DSK"};
+    const QStringList uniflex = {"C012_1.DSK", "C014.DSK", "C014.DSK.CORRUPTED"};
     int flex = 0;
     for (const QString &f : QDir(dir).entryList(QDir::Files, QDir::Name)) {
         const QString p = dir + "/" + f;
         const dw::fs::Verdict v = verdictOf(p);
         const dw::fs::Candidate *c = v.bestCandidate();
-        if (foreign.contains(f)) {
-            CHECK(c && !c->supported && (c->fsId == "os9" || c->fsId == "uniflex"), f + ": " + (c ? c->description : QString("nothing")));
+        if (os9.contains(f)) {
+            CHECK(c && !c->supported && c->fsId == "os9", f + ": " + (c ? c->description : QString("nothing")));
+            continue;
+        }
+        if (uniflex.contains(f)) {
+            // C012_1 is a block short of its swap space (likely); C014 is exact; both have errors (uniflex_samples.txt)
+            Flex::OpenedDisc od;
+            QString err;
+            dw::fs::Tier tier;
+            CHECK(openUniflex(p, &od, &err, &tier) && tier == (f == "C012_1.DSK" ? dw::fs::Tier::Likely : dw::fs::Tier::Certain) &&
+                  !od.disc().volume(0)->check().ok() && !od.readOnlyWhy(0).isEmpty(), f + ": UniFLEX, read-only, its faults found: " + err);
             continue;
         }
         Flex::OpenedDisc od;
@@ -443,9 +484,185 @@ static void samples(const QString &dir) {
     CHECK(flex == 17, QString("%1 FLEX discs").arg(flex));
 }
 
+// ------------------------------------------------------------------------------------------------ UniFLEX
+
+static QStringList namesIn(dw::fs::Volume *v, const Path &dir) {
+    QVector<dw::fs::Entry> es;
+    QString err;
+    QStringList n;
+    if (v->list(dir, &es, &err)) for (const dw::fs::Entry &e : es) n << e.name + (e.isDir() ? "/" : "");
+    n.sort();
+    return n;
+}
+
+static QByteArray crText(const QStringList &lines) {
+    QByteArray b;
+    for (const QString &l : lines) b += l.toLatin1() + '\r';
+    return b;
+}
+
+// uf-basic.dsk (uniflex_check.py make): the tree, every kind of file, the attributes, the refusals, reload, Save As
+static void uniflexBasic(const QString &dir, const QString &work) {
+    printf("UniFLEX: uf-basic.dsk\n");
+    Flex::OpenedDisc od;
+    QString err;
+    CHECK(openUniflex(dir + "/uf-basic.dsk", &od, &err), "opened: " + err);
+    if (!od.uniflex()) return;
+    CHECK(!od.disk() && !od.volume(), "no FLEX disc in it");
+    dw::fs::Volume *v = od.disc().volume(0);
+    CHECK(v && v->fsId() == "uniflex" && v->caps().dirs && od.disc().mounts()[0].group == "uniflex", "one UniFLEX volume, with directories, in the uniflex pane");
+    CHECK(namesIn(v, Path()) == QStringList({".badblocks", "Prog", "bin/", "dev/", "empty", "fourteen_chars", "readme", "src/"}),
+          "the root: " + namesIn(v, Path()).join(" "));
+    CHECK(namesIn(v, Path({"src"})) == QStringList({"also.c", "big.dat", "holey", "sub/"}), "/src: " + namesIn(v, Path({"src"})).join(" "));
+    CHECK(namesIn(v, Path({"src", "sub"})) == QStringList({"deep.c"}), "/src/sub");
+    QByteArray data;
+    CHECK(v->read(Path({"readme"}), &data, &err) && data == crText({"UniFLEX test disc", "\tindented with a TAB", "last line"}),
+          "readme as stored: CR line ends, a TAB");
+    CHECK(v->read(Path({"src", "holey"}), &data, &err) && data == QByteArray(512, 'A') + QByteArray(1024, '\0') + QByteArray(100, 'B'),
+          "a file with two blocks never written reads zeros there");
+    QByteArray big(160 * 512 + 33, '\0');
+    for (int i = 0; i < big.size(); ++i) big[i] = char((i * 7) & 0xFF);
+    CHECK(v->read(Path({"src", "big.dat"}), &data, &err) && data == big, "big.dat: direct, single and double indirect blocks");
+    CHECK(v->read(Path({"empty"}), &data, &err) && data.isEmpty(), "an empty file");
+    CHECK(v->read(Path({"dev", "tty0"}), &data, &err) && data.isEmpty(), "a device has no data");
+    CHECK(!v->read(Path({"src"}), &data, &err), "a directory isn't read: " + err);
+    CHECK(!v->read(Path({"nothing"}), &data, &err), "no such file: " + err);
+    dw::fs::Entry e;
+    CHECK(v->stat(Path({"Prog"}), &e, &err) && e.size == 768 && e.attrs.value("ownerRead").toBool() && e.attrs.value("ownerWrite").toBool() &&
+          e.attrs.value("ownerExecute").toBool() && e.attrs.value("othersRead").toBool() && !e.attrs.value("othersWrite").toBool() &&
+          e.attrs.value("othersExecute").toBool() && e.attrs.value("owner").toInt() == 3 && e.attrs.value("type").toString() == "file",
+          "Prog: rwxr-x, owner 3");
+    CHECK(v->stat(Path({"bin", "hello"}), &e, &err) && e.attrs.value("setUserId").toBool(), "bin/hello sets the user id");
+    CHECK(v->stat(Path({"readme"}), &e, &err) && e.modified == QDateTime(QDate(1985, 4, 25), QTime(19, 23, 40), QTimeZone::utc()),
+          "readme's time, seconds since 1980 (UTC): " + e.modified.toString(Qt::ISODate));
+    CHECK(v->stat(Path({"dev", "tty0"}), &e, &err) && e.attrs.value("type").toString() == "character device 3, 1" && e.size == 0,
+          "dev/tty0: " + e.attrs.value("type").toString());
+    CHECK(v->stat(Path({"dev", "fd0"}), &e, &err) && e.attrs.value("type").toString() == "block device 1, 0", "dev/fd0: " + e.attrs.value("type").toString());
+    dw::fs::Entry a, b;
+    CHECK(v->stat(Path({"src", "also.c"}), &a, &err) && v->stat(Path({"src", "sub", "deep.c"}), &b, &err) && a.attrs.value("fdn") == b.attrs.value("fdn") &&
+          a.attrs.value("links").toInt() == 2, "a hard link: two names, one fdn, 2 links");
+    CHECK(v->stat(Path({"src"}), &e, &err) && e.isDir() && e.attrs.value("links").toInt() == 3, "/src: 3 links (its name, its ., sub's ..)");
+    const QMap<QString, QJsonObject> retro = v->toRetro(a);
+    CHECK(retro.contains("uniflex") && retro["uniflex"].value("ownerRead").toBool() && retro["uniflex"].contains("owner") &&
+          !retro["uniflex"].contains("fdn"), "retro-files: the access bits and owner travel, the fdn doesn't");
+    const dw::fs::Report r = v->check();
+    CHECK(r.ok() && r.warnings.isEmpty(), "the check is clean: " + r.errors.join("; ") + r.warnings.join("; "));
+    CHECK(v->info().title == "basic" && v->volumeValues().value("fsName").toString() == "uniflex" && v->volumeValues().value("number").toInt() == 7,
+          "pack basic, file system uniflex, number 7");
+
+    // read-only: every change refused, nothing staged
+    CHECK(od.readOnlyWhy(0) == UniFlex::UniFlexVolume::ReadOnlyText, "read-only: " + od.readOnlyWhy(0));
+    const QString before = describe(*od.uniflex());
+    struct Try { const char *what; std::function<bool(QString *)> f; };
+    const Try tries[] = {
+        {"write", [&](QString *e) { return v->write(Path(), "new", "x", {}, QDateTime(), false, e); }},
+        {"mkdir", [&](QString *e) { return v->mkdir(Path(), "d", e); }},
+        {"remove", [&](QString *e) { return v->remove(Path({"readme"}), e); }},
+        {"rename", [&](QString *e) { return v->rename(Path({"readme"}), Path({"other"}), e); }},
+        {"setAttrs", [&](QString *e) { return v->setAttrs(Path({"readme"}), {{"ownerWrite", false}}, e); }},
+        {"setVolumeAttrs", [&](QString *e) { return v->setVolumeAttrs({{"label", "x"}}, e); }},
+    };
+    for (const Try &t : tries) {
+        QString e;
+        CHECK(!od.disc().transact(t.f, &e) && e == UniFlex::UniFlexVolume::ReadOnlyText && !od.dirty(), QString(t.what) + " refused: " + e);
+    }
+    CHECK(!od.save(false, &err), "save refused: " + err);
+    CHECK(od.uniflex()->reload(&err) && describe(*od.uniflex()) == before, "a reload gives the same state");
+    // Save As: the same bytes, read back
+    const QString copy = work + "/uf-copy.dsk";
+    QFile::remove(copy);
+    CHECK(od.saveAs(copy, dw::device::Kind::Raw, &err) && slurp(copy) == slurp(dir + "/uf-basic.dsk"), "Save As: byte for byte: " + err);
+    Flex::OpenedDisc again;
+    CHECK(openUniflex(copy, &again, &err) && describe(*again.uniflex()) == before, "the copy reads the same");
+
+    // uf-many.dsk: a directory of 340 files, its map reaching an indirect block
+    Flex::OpenedDisc many;
+    err.clear();
+    CHECK(openUniflex(dir + "/uf-many.dsk", &many, &err) && namesIn(many.disc().volume(0), Path({"lots"})).size() == 340 &&
+          many.disc().volume(0)->read(Path({"lots", "f339"}), &data, &err) && data == crText({"file 339"}) && many.disc().volume(0)->check().ok(),
+          "uf-many.dsk: 340 files in /lots, the last one read: " + err);
+}
+
+// The damaged discs: each fault named, the disc still listed where it can be
+static void uniflexFaults(const QString &dir) {
+    printf("UniFLEX: damaged discs\n");
+    struct Want { const char *file; const char *error; };
+    const Want wants[] = {
+        {"uf-bad-dup.dsk", "is in both /readme and /Prog"},
+        {"uf-bad-freecount.dsk", "the SIR counts 418 free blocks, but its free list holds 417"},
+        {"uf-bad-links.dsk", "/readme: its link count is 2, but 1 directory entry names it"},
+        {"uf-bad-freefdn.dsk", "/Prog: its entry names fdn 4, which is free"},
+        {"uf-bad-chain.dsk", "the free list names block 16776960, outside the volume"},
+        {"uf-bad-map.dsk", "/src/big.dat: a double or triple indirect block names block 649, outside the volume"},
+        {"uf-short.dsk", "the image ends at block 1999, but the volume goes on to block 2463"},
+        {"uf-noroot.dsk", "/: no . entry"},
+    };
+    for (const Want &w : wants) {
+        Flex::OpenedDisc od;
+        QString err;
+        const bool open = openUniflex(dir + "/" + w.file, &od, &err);
+        const dw::fs::Report r = open ? od.disc().volume(0)->check() : dw::fs::Report();
+        bool named = false;
+        for (const QString &e : r.errors) if (e.contains(w.error)) named = true;
+        CHECK(open && named, QString("%1: %2").arg(w.file, r.errors.join("; ")));
+    }
+    Flex::OpenedDisc od;
+    QString err;
+    QByteArray data;
+    if (openUniflex(dir + "/uf-bad-map.dsk", &od, &err)) {
+        dw::fs::Entry e;
+        CHECK(od.disc().volume(0)->stat(Path({"src", "big.dat"}), &e, &err) && !e.problem.isEmpty() &&
+              !od.disc().volume(0)->read(Path({"src", "big.dat"}), &data, &err), "a file whose map is broken is listed with its problem and not read: " + err);
+        CHECK(od.disc().volume(0)->read(Path({"readme"}), &data, &err), "the others still read");
+    }
+    Flex::OpenedDisc odd;
+    if (openUniflex(dir + "/uf-odd.dsk", &odd, &err)) {
+        const dw::fs::Report r = odd.disc().volume(0)->check();
+        CHECK(r.ok() && r.warnings.size() == 1 && r.warnings[0].contains("\\x0adynacalc"), "uf-odd.dsk: a warning, the name shown with \\x0a: " + r.warnings.join("; "));
+        CHECK(odd.disc().volume(0)->read(Path({"\ndynacalc"}), &data, &err) && data == "odd\r", "and it reads");
+    }
+}
+
+static void uniflexNames() {
+    printf("UniFLEX names\n");
+    UniFlex::NameRules n;
+    QString why;
+    CHECK(n.valid("readme", dw::fs::NodeKind::File, &why) && n.valid("Two Words.c", dw::fs::NodeKind::File, &why) &&
+          n.valid("fourteen_chars", dw::fs::NodeKind::File, &why), "valid names");
+    CHECK(!n.valid("fifteen_chars.x", dw::fs::NodeKind::File, &why), "14 characters at most: " + why);
+    CHECK(!n.valid("a/b", dw::fs::NodeKind::File, &why) && !n.valid("..", dw::fs::NodeKind::Dir, &why), "no '/', not . or ..: " + why);
+    CHECK(n.caseSensitivity() == Qt::CaseSensitive, "case-sensitive");
+    CHECK(n.fromHost("a very long name.txt", dw::fs::NodeKind::File) == "a very long na", "from a host name: " + n.fromHost("a very long name.txt", dw::fs::NodeKind::File));
+}
+
+// Every UniFLEX sample: it opens as UniFLEX, read-only; a reload is faithful; every file that has no problem reads
+static void uniflexSamples(const QString &dir) {
+    printf("the UniFLEX sample discs (%s)\n", qPrintable(dir));
+    int n = 0;
+    for (const QString &f : QDir(dir).entryList({"*.dsk"}, QDir::Files, QDir::Name)) {
+        Flex::OpenedDisc od;
+        QString err;
+        if (!openUniflex(dir + "/" + f, &od, &err)) { CHECK(false, f + ": " + err); continue; }
+        ++n;
+        const UniFlex::Fs &fs = *od.uniflex();
+        const QString before = describe(fs);
+        int read = 0, bad = 0;
+        for (const UniFlex::Node &node : fs.nodes()) {
+            const UniFlex::Fdn *g = fs.fdnOf(node);
+            if (&node == &fs.root() || !g || g->isDir() || !node.problem.isEmpty()) continue;
+            QByteArray data;
+            if (fs.readFile(node, &data, &err) && data.size() == (g->isDevice() ? 0 : g->size)) ++read;
+            else ++bad;
+        }
+        CHECK(!od.readOnlyWhy(0).isEmpty() && od.uniflex()->reload(&err) && describe(*od.uniflex()) == before && bad == 0,
+              QString("%1: read-only, a faithful reload, %2 files read").arg(f).arg(read));
+    }
+    CHECK(n == 37, QString("%1 UniFLEX samples").arg(n));
+}
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
-    if (argc < 2) { fprintf(stderr, "usage: voltest <dir made by flex_check.py make> [<sample discs>]\n"); return 2; }
+    if (argc < 2) { fprintf(stderr, "usage: voltest <dir made by flex_check.py make and uniflex_check.py make> [<sample discs> [<UniFLEX samples>]]\n"); return 2; }
     const QString dir = QString::fromLocal8Bit(argv[1]);
     const QString work = QDir::temp().filePath("flexvoltest");
     QDir().mkpath(work);
@@ -456,7 +673,11 @@ int main(int argc, char **argv) {
     track0(dir, work);
     faults(dir);
     names();
+    uniflexBasic(dir, work);
+    uniflexFaults(dir);
+    uniflexNames();
     if (argc > 2) samples(QString::fromLocal8Bit(argv[2]));
+    if (argc > 3) uniflexSamples(QString::fromLocal8Bit(argv[3]));
     QDir(work).removeRecursively();
     printf(fails ? "%d FAILED\n" : "ALL OK\n", fails);
     return fails ? 1 : 0;

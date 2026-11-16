@@ -21,7 +21,8 @@ namespace Flex {
 
 QString HostPolicy::hostName(const dw::TransferItem &it) const {
     dw::TransferItem t = it;
-    if (t.hostName.isEmpty() && t.name == t.name.toUpper()) t.hostName = t.name.toLower();
+    // FLEX names (upper case on the disc) come out in lower case; UniFLEX names keep their case, which is part of them
+    if (t.hostName.isEmpty() && t.sourceFs != "uniflex" && t.name == t.name.toUpper()) t.hostName = t.name.toLower();
     return dw::xfer::HostPolicy::hostName(t);
 }
 

@@ -16,9 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 // flexvolume.h - FLEX Disk Wrangler on DiskWranglerCore: a FLEX disc as a dw::fs::Volume (FlexVolume), the opened
-// image as the window's Document and the console program's opened image alike (OpenedDisc), detection by tiers (the
-// FLEX probe, and recognisers that name the OS-9 and UniFLEX discs this program can't open), and who this program is
-// (appInfo, self). QtCore only: the console program uses all of it.
+// image as the window's Document and the console program's opened image alike (OpenedDisc: a FLEX disc, or a UniFLEX
+// one, read-only, through uniflexvolume.h), detection by tiers (the FLEX and UniFLEX probes, and a recogniser that
+// names the OS-9 discs this program can't open), and who this program is (appInfo, self). QtCore only: the console
+// program uses all of it.
 #pragma once
 
 #include <memory>
@@ -33,6 +34,7 @@
 #include <diskwrangler/fs/volume.h>
 
 #include "flexdisk.h"
+#include "uniflexvolume.h"
 
 namespace Flex {
 
@@ -89,8 +91,9 @@ struct ProbeResult {
     int track0 = 0;                              // track 0 stored short, with this many sectors (0: a full track)
 };
 
-// The opened image: the container and the FLEX volume on it (one mount, "FLEX"). It is the window's Document and
-// the console program's opened image alike, so both save through the same checks.
+// The opened image: the container and the volume on it, one mount: "FLEX" (group "flex"), or "UniFLEX" (group
+// "uniflex", read-only). It is the window's Document and the console program's opened image alike, so both save
+// through the same checks.
 class OpenedDisc : public dw::app::Document {
 public:
     OpenedDisc() = default;
@@ -99,10 +102,14 @@ public:
 
     // Opens the file and attaches the reading detection found (the console program's open).
     bool open(const QString &path, const ProbeResult &r, QString *err);
+    bool open(const QString &path, const UniFlex::ProbeResult &r, QString *err);
     // The window's open: the container opened and its state noted, no reading attached yet.
     bool load(const QString &path, QString *err);
     bool attach(const ProbeResult &r, QString *err);
+    // A UniFLEX disc: the file as 512-byte blocks, read-only.
+    bool attach(const UniFlex::ProbeResult &r, QString *err);
     bool writableGeometry() const { return m_exact; }
+    bool checkOk() const { return m_checkOk; }                       // the disc's check found no errors when it opened
     static const char *const GeometryText;       // why a disc whose file isn't its geometry's size can't be written
     void detach();
     void noteFileState();
@@ -111,9 +118,11 @@ public:
     const dw::fs::Disc &disc() const override { return m_disc; }
     dw::device::Container &container() { return m_img; }
     const dw::device::Container &container() const { return m_img; }
-    Disk *disk() { return m_disk.get(); }
+    Disk *disk() { return m_disk.get(); }                            // the FLEX disc, or null
     const Disk *disk() const { return m_disk.get(); }
-    FlexVolume *volume() const;
+    FlexVolume *volume() const;                                      // its volume, or null
+    UniFlex::Fs *uniflex() { return m_ufs.get(); }                   // the UniFLEX disc, or null
+    const UniFlex::Fs *uniflex() const { return m_ufs.get(); }
 
     bool isOpen() const override { return m_img.isOpen(); }
     QString path() const override { return m_img.path(); }
@@ -126,6 +135,7 @@ private:
     bool checkWritten(dw::device::Container &written, QString *err) const;
     dw::device::Container m_img;
     std::unique_ptr<Disk> m_disk;
+    std::unique_ptr<UniFlex::Fs> m_ufs;
     bool m_checkOk = true;
     bool m_exact = true;                         // the SIR's geometry is exactly the file's size
     QDateTime m_fileTime;
@@ -165,16 +175,16 @@ public:
     QVector<dw::fs::Candidate> probe(const dw::fs::ProbeContext &ctx) const override;
 };
 
-// Discs of the other 6809 systems that turn up beside FLEX ones, recognised so that the message says what they are:
-// OS-9 (RBF: its identification sector, LSN 0) and UniFLEX (its SIR in block 1 names the file system and the pack).
-// Not supported; no program of the family owns them.
+// Discs of another 6809 system that turn up beside FLEX ones, recognised so that the message says what they are:
+// OS-9 (RBF: its identification sector, LSN 0). Not supported; no program of the family owns them. (UniFLEX discs have
+// their own probe, uniflexvolume.h.)
 class OtherSystemsProbe : public dw::fs::Probe {
 public:
     QString id() const override { return "other"; }
     QVector<dw::fs::Candidate> probe(const dw::fs::ProbeContext &ctx) const override;
 };
 
-// Runs the probes on an opened container.
+// Runs the probes on an opened container: FLEX, UniFLEX, OS-9.
 dw::fs::Verdict verdict(dw::device::Container &img, const QString &path);
 
 } // namespace Flex

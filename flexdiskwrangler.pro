@@ -27,9 +27,9 @@ QMAKE_TARGET_PRODUCT = FLEX Disk Wrangler
 QMAKE_TARGET_DESCRIPTION = FLEX Disk Wrangler
 QMAKE_TARGET_COPYRIGHT = Copyright (C) 2026 Daniel Jameson. Licensed under the GNU GPL v3 or later.
 SOURCES += src/main.cpp src/mainwindow.cpp src/viewer.cpp src/icon.cpp src/hostpolicy.cpp src/flextext.cpp \
-           src/flexdisk.cpp src/flexvolume.cpp
+           src/flexdisk.cpp src/flexvolume.cpp src/uniflexfs.cpp src/uniflexvolume.cpp
 HEADERS += src/mainwindow.h src/viewer.h src/icon.h src/hostpolicy.h src/flextext.h \
-           src/flexdisk.h src/flexvolume.h
+           src/flexdisk.h src/flexvolume.h src/uniflexfs.h src/uniflexvolume.h
 RESOURCES += src/licences.qrc                      # Help > Licences: LICENSE, notices, the LGPL for Qt
 exists(licences-bundled.qrc): RESOURCES += licences-bundled.qrc   # a release build's library licences (ci/)
 !include(core/diskwranglercore.pri): error("core/ is empty: run 'git submodule update --init'")
