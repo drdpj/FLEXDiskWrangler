@@ -21,7 +21,10 @@
 // has the layout and how sure we are of each part.
 //
 // A sector is addressed as (track, sector), sectors numbered from 1; logical sector (t, s) is at byte
-// (t * sectorsPerTrack + s - 1) * 256 of the disc. Every sector of a file, the directory and the free chain starts
+// (t * sectorsPerTrack + s - 1) * 256 of the disc. A double-density disc's track 0 is single density, with fewer
+// sectors (TSC's 6809 FLEX Adaptation Guide, Appendix B); an image may keep it padded to the full track (the sample
+// EFORTH) or store it at its own size, and then track t > 0 starts at (track0 + (t - 1) * sectorsPerTrack) * 256.
+// Every sector of a file, the directory and the free chain starts
 // with a link to the next (0, 0 at the end) and a 16-bit record number; the other 252 bytes are data.
 //
 // Writing (series flex-2) does what FLEX's own file management system does, step for step: where a new entry goes,
@@ -76,6 +79,13 @@ struct Sir {
 // why: the reason it can't. exact: the geometry gives exactly `bytes` bytes.
 bool sirPlausible(const Sir &s, qint64 bytes, QString *why, bool *exact);
 
+// An image with its track 0 stored short: the number of track-0 sectors T that `bytes` gives, when it is exactly
+// (T + lastTrack * sectors) * 256 for 5 <= T < sectors; otherwise 0. Only a candidate: endsTrack0 confirms it.
+int storedTrack0(const Sir &s, qint64 bytes);
+// Sector (0, T) of a short track 0 is its directory's end on track 0: its link is 0/0 or leaves track 0. (In a full
+// track 0, NEWDISK linked it to (0, T + 1), and FLEX never changes that.)
+bool endsTrack0(const QByteArray &sector);
+
 // The attribute bits (directory byte 11). FLEX's PROT changes only these four and keeps bits 0-3.
 enum Attr : quint8 { WriteProtect = 0x80, DeleteProtect = 0x40, ReadProtect = 0x20, CatalogProtect = 0x10 };
 const quint8 ProtectionBits = 0xF0;
@@ -118,7 +128,12 @@ public:
     const Sir &sir() const { return m_sir; }
     int tracks() const { return m_sir.lastTrack + 1; }
     int sectorsPerTrack() const { return m_sir.sectors; }
-    bool inRange(const TS &ts) const { return ts.t >= 0 && ts.t <= m_sir.lastTrack && ts.s >= 1 && ts.s <= m_sir.sectors; }
+    // Track 0's sectors in the image: sectorsPerTrack(), or fewer when the image stores a short track 0.
+    int track0Sectors() const { return m_t0; }
+    bool shortTrack0() const { return m_t0 < m_sir.sectors; }
+    bool inRange(const TS &ts) const {
+        return ts.t >= 0 && ts.t <= m_sir.lastTrack && ts.s >= 1 && ts.s <= (ts.t == 0 ? m_t0 : m_sir.sectors);
+    }
 
     const QVector<File> &files() const { return m_files; }
     int indexOf(const QString &name) const;          // by name, ignoring case; -1 if none
@@ -166,15 +181,19 @@ public:
     // LINK: the loader pointed at a file's first sector.
     bool setBootLink(const TS &to, QString *err);
 
-    // A blank disc laid out as NEWDISK lays one out, on a disc of exactly tracks * sectors * 256 bytes: every sector
-    // linked to the next, the SIR, the directory from 0/5 to the end of track 0, the free chain from 1/1 to the end.
-    // Sector 1 (the boot loader's) stays empty.
-    static bool makeBlank(dw::device::Linear *disc, int tracks, int sectors, const QByteArray &name, int number,
-                          const QDate &date, QString *err);
+    // A blank disc laid out as NEWDISK lays one out: every sector linked to the next, the SIR, the directory from 0/5
+    // to the end of track 0, the free chain from 1/1 to the end. Sector 1 (the boot loader's) stays empty. track0:
+    // track 0's sectors (fewer than `sectors` on a double-density disc, whose track 0 is single density). The disc is
+    // either tracks * sectors * 256 bytes (a short track 0 padded to the full track, its extra sectors zero and
+    // belonging to nothing) or (track0 + (tracks - 1) * sectors) * 256 (track 0 stored at its own size).
+    static bool makeBlank(dw::device::Linear *disc, int tracks, int sectors, int track0, const QByteArray &name,
+                          int number, const QDate &date, QString *err);
 
 private:
     bool readDirectory(QString *err);
-    qint64 offsetOf(const TS &ts) const { return (qint64(ts.t) * m_sir.sectors + ts.s - 1) * SectorSize; }
+    qint64 offsetOf(const TS &ts) const {
+        return (ts.t == 0 ? qint64(ts.s - 1) : m_t0 + qint64(ts.t - 1) * m_sir.sectors + ts.s - 1) * SectorSize;
+    }
     bool writeSector(const TS &ts, const QByteArray &data, QString *err);
     bool writeSirFree(QString *err);                              // $1D-$22 from m_sir, the rest of the SIR kept
     bool takeSector(TS *out, QString *err);                       // FMS LD79A: the first free sector
@@ -186,6 +205,7 @@ private:
     QVector<File> m_files;
     QVector<TS> m_dirSectors;
     int m_deleted = 0, m_freeSlots = 0;
+    int m_t0 = 0;                                // track 0's sectors in the image
 };
 
 } // namespace Flex

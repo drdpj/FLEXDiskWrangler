@@ -339,7 +339,8 @@ QStringList MainWindow::statusVariants() const {
     const int n = d.files().size();
     const QString files = QString("%1 file%2").arg(n).arg(n == 1 ? "" : "s");
     const QString fr = dw::fmtBytes(qint64(d.sir().freeCount) * Flex::DataBytes, dw::SmallSizes::AsBytes);
-    const QString shape = QString("FLEX, %1 tracks of %2 sectors").arg(d.tracks()).arg(d.sectorsPerTrack());
+    QString shape = QString("FLEX, %1 tracks of %2 sectors").arg(d.tracks()).arg(d.sectorsPerTrack());
+    if (d.shortTrack0()) shape += QString(" (track 0: %1)").arg(d.track0Sectors());
     QString longTail, shortTail;
     if (!writable(0)) { longTail = "  -  read-only: " + readOnlyReason(0); shortTail = "  -  read-only"; }
     return {QString("%1 - %2, %3 free (%4 sectors)").arg(shape, files, fr).arg(d.sir().freeCount) + longTail,
@@ -479,6 +480,8 @@ void MainWindow::discInfo() {
     l << "<h3>" + QFileInfo(m_doc.path()).fileName().toHtmlEscaped() + "</h3>";
     l << QString("<b>Container:</b> %1, %2 bytes").arg(dw::device::kindName(m_doc.container().kind())).arg(m_doc.container().rawFileSize());
     l << QString("<b>Geometry (from the SIR):</b> %1 tracks (0-%2) of %3 sectors of 256 bytes").arg(d.tracks()).arg(s.lastTrack).arg(s.sectors);
+    if (d.shortTrack0())
+        l << QString("<b>Track 0:</b> %1 sectors, stored at its own size (a double-density disc's single-density track 0)").arg(d.track0Sectors());
     l << QString("<b>Volume:</b> \"%1\", number %2").arg(s.labelText().toHtmlEscaped()).arg(s.volumeNumber);
     l << QString("<b>Made:</b> %1").arg(s.date().isValid() ? s.date().toString("d MMMM yyyy") : QString("no date"));
     l << QString("<b>Free:</b> %1 sectors, the free chain from %2 to %3").arg(s.freeCount).arg(s.firstFree.toString(), s.lastFree.toString());

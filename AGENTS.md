@@ -30,7 +30,7 @@ loader from another disc (series flex-2), every change **as FLEX's own file mana
 | File | Role |
 |---|---|
 | `flexdisk.h/.cpp` | `Flex::Disk`, the filesystem on a `dw::device::Linear`: the SIR, the directory (every slot of every directory sector), each file's chain, reading a file (a random file without its two map sectors), `check()`; writing as FLEX does (`writeFile`, `deleteFile`, `renameFile`, `setProtection`, the volume name and number, the boot loader's sectors and link, `makeBlank` as NEWDISK), each change ending in a `reload()`. QtCore, no core interfaces |
-| `flexvolume.h/.cpp` | DiskWranglerCore's side: `Flex::NameRules`, `FlexVolume` (the `dw::fs::Volume`, `fsId()` "flex", flat, attributes write / delete / read / catalog (editable) / random / sectors, retro-files family `flex`; a file written keeps the date and protection it brings, as FLEX's COPY does), `OpenedDisc` (the window's Document and `flexdw`'s opened image alike: the raw layout from the SIR, read-only for errors or a size that isn't the SIR's geometry, the checked save, Save As raw only), `self()` / `appInfo()`, the presets (the sample discs' shapes), `createBlank`, `readBootLoader`, `FlexProbe`, `OtherSystemsProbe` (OS-9, UniFLEX: named, not supported), `verdict()` |
+| `flexvolume.h/.cpp` | DiskWranglerCore's side: `Flex::NameRules`, `FlexVolume` (the `dw::fs::Volume`, `fsId()` "flex", flat, attributes write / delete / read / catalog (editable) / random / sectors, retro-files family `flex`; a file written keeps the date and protection it brings, as FLEX's COPY does), `OpenedDisc` (the window's Document and `flexdw`'s opened image alike: the raw layout from the SIR, read-only for errors or a size that isn't the SIR's geometry, the checked save, Save As raw only), `self()` / `appInfo()`, the presets (the sample discs' shapes), `createBlank`, `readBootLoader`, `FlexProbe`, `OtherSystemsProbe` (OS-9, UniFLEX: named, not supported), `verdict()`; the presets carry `track0` (a short track 0 is padded in the image) |
 | `flextext.h/.cpp` | FLEX text for the viewer: CR line ends, TAB + count space compression, NUL padding |
 | `hostpolicy.h/.cpp` | QtCore, shared with `flexdw`: `Flex::HostPolicy` (files out as stored, upper-case names lower-cased) and `hostRead()` (the core's host reader's rules) |
 | `mainwindow.*` | the window on the core's kit (`dw::ui::DiscWindow`): `FlexPane` (drags out with `execDragOut`; a window with no FLEX disc opens dropped images, a writable disc imports dropped files and retro-files JSON), the hooks (columns, rows, status, opening, Save As, Properties with the name and protection, Volume name and number, Disc information with the boot loader), New disc image, Add files, Paste, Rename, Copy boot loader from / Link boot loader to file |
@@ -40,7 +40,10 @@ loader from another disc (series flex-2), every change **as FLEX's own file mana
 
 **Raw images only, so far.** `OpenedDisc::attach` gives the raw file a layout of `last track + 1` cylinders, one head,
 `sectors` sectors of 256 bytes from ID 1, so the stored bytes are FLEX's logical sectors in order. The probe looks only
-at raw files. (A FLEX disc in ImageDisk or DSK, or with a single-density track 0, needs its own work: none in the
+at raw files. A double-density disc's single-density track 0 (fewer sectors; TSC's *6809 FLEX Adaptation Guide*,
+Appendix B) is read padded to the full track (as the sample EFORTH) or stored at its own size: `storedTrack0` /
+`endsTrack0` find the second, the layout gets the core's `RawLayout::t0sectrk`, and `Disk::offsetOf` / `inRange` use
+`track0Sectors()`. New discs are always padded. (A FLEX disc in ImageDisk or DSK needs its own work: none in the
 samples yet.)
 
 ## The rules that must not be broken

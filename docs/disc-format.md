@@ -2,8 +2,8 @@
 
 FLEX is Technical Systems Consultants' disc operating system for 6800 (FLEX 2) and 6809 (FLEX 9) computers. This
 document is the reference for `src/flexdisk.*`. Each fact says where it comes from: **seen** on the sample discs
-(17 real FLEX discs, `testdata/FLEXDisks`, listed in the workspace's `design/plan/flex.md`), or **FLEX** (read from
-FLEX's own code, below).
+(17 real FLEX discs, `testdata/FLEXDisks`, listed in the workspace's `design/plan/flex.md`), **FLEX** (read from
+FLEX's own code, below), or **the Guide** (TSC's *6809 FLEX Adaptation Guide*, below).
 
 ## Where the facts come from (series flex-2, 15 Nov 2026)
 
@@ -33,18 +33,58 @@ How FLEX writes was settled from FLEX itself, disassembled from the sample discs
   files lie in order near the end of its own.
 * FLEX2_A and FLEX2_B are FLEX 2 utility discs with no DOS on them (their boot sector's link is 0/1, not linked).
 
+**The Guide** (16 Nov 2026): TSC's *6809 FLEX Adaptation Guide* (the FLEX User's Group's copy), for whoever fits FLEX
+to new hardware: the disc format (section 2.3), NEWDISK and the SIR (section 9, with the skeletal NEWDISK of
+Appendix F), sector interleave (9.4), the boot loader and LINK (8.3), and TSC's disc formats (Appendix B). It agrees
+with everything above that it covers, offset for offset; it doesn't describe directory entries, attributes or random
+files (it points to the Advanced Programmer's Guide), so those stay as read from the FMS. What it added: sectors are
+always 256 bytes, and a double-density disc's track 0 is single density (below).
+
 ## Images
 
+* **Sectors are 256 bytes, always** (**the Guide**: sections 1.3, 2.3 and 9, and Appendix B: "Sector size is 256
+  bytes"), numbered from 1; tracks from 0.
 * A **raw** image (`.dsk`, as most FLEX emulators write it): every sector in order, track by track, 256 bytes each.
   Logical sector (t, s) is at byte `(t * sectors-per-track + s - 1) * 256`. **Seen**: on all 17 discs the SIR's
   geometry gives exactly the file's size.
 * On a double-sided disc FLEX numbers the sectors of both sides as one track. **FLEX** (TSC NEWDISK): side 1's sectors
   carry the IDs that follow side 0's (11-20 on a 10-sector side), so a container's sector IDs are the logical ones.
 * Only raw images are read so far. ImageDisk or DSK files of FLEX discs have not turned up yet.
-* **Seen**: EFORTH (35 x 18) has a directory only in sectors 5-10 of track 0, and sectors 11-18 of track 0 in the
-  image belong to nothing: a disc whose track 0 was formatted single density (10 sectors) with the other tracks at 18.
-  The raw image pads track 0 to 18. Nothing FLEX writes ever goes to track 0 outside the directory chain, so this
-  needs nothing more.
+* Sectors are stored in logical order. **The Guide** (9.4): TSC formats a track with its sectors interleaved (5.25":
+  physical 1-10 hold logical 1 3 5 7 9 2 4 6 8 10; 8": 1 6 11 3 8 13 5 10 15 2 7 12 4 9 14), so a container that
+  keeps physical order (ImageDisk) must be read by sector ID, not by position.
+
+### Track 0 on a double-density disc
+
+**The Guide** (Appendix B, note 1): on a double-density disc track 0 is formatted **single density** "to facilitate
+automatic density selection", so it has fewer sectors than the other tracks. The SIR's sectors per track (`$27`) are
+the *other* tracks' (the skeletal NEWDISK of Appendix F stores the double-density count there, and ends the directory
+at the last sector of the single-density track 0). TSC's formats:
+
+| Disc | Tracks | Sectors per track, tracks 1 on | Track 0 |
+| --- | --- | --- | --- |
+| 8" single-sided, single density (**TSC's 8" distribution format**) | 77 | 15 | 15 |
+| 8" double-sided, single density | 77 | 30 | 30 |
+| 8" single-sided, double density | 77 | 26 | 15 |
+| 8" double-sided, double density | 77 | 52 | 30 |
+| 5.25" single-sided, single density (**TSC's 5.25" distribution format**: 35 tracks) | 35 or 40 | 10 | 10 |
+| 5.25" double-sided, single density | 35 or 40 | 20 | 20 |
+
+An image of such a disc holds track 0 in one of two ways, and the program reads both:
+
+* **Padded** to the full track: the file is the SIR's geometry exactly, the directory ends before the end of track 0
+  and the sectors after it belong to nothing. **Seen**: EFORTH (35 x 18) has its directory in sectors 5-10 of track 0
+  (a single-density track 0 of 10 sectors) and sectors 11-18 in the image belong to nothing. Nothing FLEX writes goes
+  to track 0 outside the directory chain, so this needs nothing more.
+* **Stored at its own size** (not among the samples): track t > 0 starts at `(T + (t - 1) * sectors-per-track) * 256`,
+  T being track 0's sectors, so the file is `(T + last track * sectors-per-track) * 256` bytes. The program takes a
+  file to be one when its size is exactly that for some T from 5 to one less than the sectors per track **and**
+  sector (0, T) ends track 0's directory (its link is 0/0 or leaves track 0). The second test tells it from a full
+  track 0 in a file cut short by the same amount: NEWDISK linked (0, T) to (0, T + 1), and FLEX never changes that
+  link. Such a file is opened writable and saved in the same layout.
+
+Other double-density formats keep track 0 double density: **seen** on FHL Color FLEX's FLX505 and FLX503TX (40 x 36,
+the directory to 0/36).
 
 ## Sectors
 
@@ -62,7 +102,8 @@ bytes 2-3 a record number; bytes 4-255 data (252 bytes).
 * Sector 3: the **System Information Record** (SIR). `$00-$0F` zero (link 0/0); `$10-$17` volume name and `$18-$1A`
   its "extension" (11 bytes, NUL-padded), `$1B-$1C` volume number, `$1D-$1E` first free sector, `$1F-$20` last free
   sector, `$21-$22` free sector count, `$23-$25` the date the disc was made (month, day, year), `$26` the highest
-  track number, `$27` sectors per track. **Seen** on all 17 discs; **FLEX** (NEWDISK, GIMIX FORMAT).
+  track number, `$27` sectors per track (on a double-density disc, the tracks after track 0). **Seen** on all 17
+  discs; **FLEX** (NEWDISK, GIMIX FORMAT); **the Guide** (9.1.5) gives the same offsets.
 * Sector 4: unused; it keeps NEWDISK's link 0/5 (**seen** on every sample but C009).
 * Sectors 5 onwards: the **directory**, a chain of sectors linked as above.
 
@@ -175,9 +216,13 @@ the old one); nothing else changes, not the date.
 
 * Every sector is formatted with its link set to the next logical sector: (t, s+1), then (t+1, 1) after the last
   sector of a track, and 0/0 after the last sector of the disc. Data and record numbers are zero.
+* **The Guide** (9.1.2): NEWDISK then reads every sector; a bad one on track 0 at sector 5 or below stops it, and any
+  other is linked out of the free chain and left out of the SIR's count. So a sound disc's free chain may skip
+  sectors and hold fewer than (last track) x (sectors per track): Check follows the chain, never the shape.
 * The SIR (0/3): link 0/0; the volume name; the number; first free 1/1; last free (last track, sectors per track);
   count (last track) x (sectors per track); today's date; the last track; sectors per track.
-* The last sector of track 0 is set to link 0/0, so the directory is 0/5 to the end of track 0, empty.
+* The last sector of track 0 is set to link 0/0, so the directory is 0/5 to the end of track 0, empty. On a
+  double-density disc that is the last sector of the single-density track 0 (**the Guide**, Appendix F).
 * The boot loader goes into sector 1 (TSC's own code; the program writes none, so its new discs don't boot until
   FLEX's own tools put a loader there).
 
@@ -197,7 +242,11 @@ FLEX leaves these to whoever writes the disc, or does something the program can'
   disc works under FLEX but doesn't start it. A loader can be copied from a FLEX disc the user has (sectors 1 and 2 as
   they are), and linked as LINK does (sector 1 bytes 5-6: the file's first sector). A copied loader is linked to the
   disc's `FLEX.SYS` if it has one, else left unlinked (0/0: TSC's FLEX 9 loader then says "DISK NOT LINKED").
-* **The shapes of new discs** are those of the samples: 35 x 10, 40 x 10, 35 x 18, 40 x 20, 40 x 36 and 77 x 15.
+* **The shapes of new discs** are those of the samples and TSC's formats (**the Guide**, Appendix B): 35 x 10, 40 x 10,
+  35 x 18 (track 0 of 10, as EFORTH), 35 x 20, 40 x 20, 40 x 36 (track 0 of 36, as FLX505), 77 x 15, 77 x 26 (track 0
+  of 15), 77 x 30 and 77 x 52 (track 0 of 30). A short track 0 is **padded** to the full track in the image, as
+  EFORTH's is, so the file is the SIR's geometry and opens in emulators that take the geometry from the SIR; the
+  padding sectors are zero and belong to nothing.
 * **Check is stricter than FLEX**: FLEX's search would not see files after a never-used slot, and FLEX would go on
   using a free chain whose count is wrong; the program lists the first and refuses to change a disc with the second.
 

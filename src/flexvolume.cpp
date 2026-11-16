@@ -222,13 +222,18 @@ bool FlexVolume::setVolumeAttrs(const dw::fs::AttrValues &a, QString *err) {
 
 // ------------------------------------------------------------------------------------------------ the opened disc
 
-static dw::device::RawLayout layoutOf(const Sir &s) {
+// track0: a short track 0 stored at its own size (0: a full track).
+static dw::device::RawLayout layoutOf(const Sir &s, int track0 = 0) {
     dw::device::RawLayout l;
     l.seclen = SectorSize;
     l.sectrk = s.sectors;                        // FLEX numbers a cylinder's sectors on both sides as one track
     l.cyls = s.lastTrack + 1;
     l.heads = 1;
     l.firstId = 1;
+    if (track0 > 0) {
+        l.t0sectrk = track0;
+        l.t0seclen = SectorSize;
+    }
     return l;
 }
 
@@ -266,7 +271,7 @@ FlexVolume *OpenedDisc::volume() const {
 
 bool OpenedDisc::attach(const ProbeResult &r, QString *err) {
     if (m_img.kind() != dw::device::Kind::Raw) { *err = "only raw FLEX images (.dsk) can be read so far"; return false; }
-    const dw::device::RawLayout l = layoutOf(r.sir);
+    const dw::device::RawLayout l = layoutOf(r.sir, r.track0);
     if (!m_img.setRawLayout(l, err)) return false;
     detach();
     m_disc.setContainer(&m_img);
@@ -346,16 +351,22 @@ dw::app::AppInfo appInfo(const QString &version) {
 
 // ------------------------------------------------------------------------------------------------ new discs
 
-// The shapes of the sample discs (docs/disc-format.md): FLEX numbers a cylinder's sectors on both sides as one track.
+// The shapes of the sample discs and TSC's formats (docs/disc-format.md): FLEX numbers a cylinder's sectors on both
+// sides as one track. A double-density disc's track 0 is single density (the Adaptation Guide, Appendix B, note 1),
+// with fewer sectors; the image pads it to the full track, as the sample EFORTH's is.
 QVector<dw::fs::Preset> presets() {
-    struct Shape { int tracks, sectors, heads; const char *what, *seen; };
+    struct Shape { int tracks, sectors, track0, heads; const char *what, *seen; };
     const Shape shapes[] = {
-        {35, 10, 1, "5.25\" single-sided, single density, 35 tracks", "FLEX2_A, FLEX2_B, FL2_0SWT, FLEX2-01, ABASIC_1"},
-        {40, 10, 1, "5.25\" single-sided, single density, 40 tracks", "SYS900, D_MAN_1, DMDR_SC1"},
-        {35, 18, 1, "5.25\" single-sided, double density, 35 tracks", "EFORTH"},
-        {40, 20, 2, "5.25\" double-sided, single density, 40 tracks", "DSTAR23"},
-        {40, 36, 2, "5.25\" double-sided, double density, 40 tracks", "FLX505, FLX503TX"},
-        {77, 15, 1, "8\" single-sided, single density, 77 tracks", "C009"},
+        {35, 10, 10, 1, "5.25\" single-sided, single density, 35 tracks", "TSC's 5.25\" distribution format; the shape of the sample discs FLEX2_A, FLEX2_B, FL2_0SWT, FLEX2-01, ABASIC_1"},
+        {40, 10, 10, 1, "5.25\" single-sided, single density, 40 tracks", "A TSC format; the shape of the sample discs SYS900, D_MAN_1, DMDR_SC1"},
+        {35, 18, 10, 1, "5.25\" single-sided, double density, 35 tracks", "The shape of the sample disc EFORTH (track 0 single density, 10 sectors)"},
+        {35, 20, 20, 2, "5.25\" double-sided, single density, 35 tracks", "A TSC format"},
+        {40, 20, 20, 2, "5.25\" double-sided, single density, 40 tracks", "A TSC format; the shape of the sample disc DSTAR23"},
+        {40, 36, 36, 2, "5.25\" double-sided, double density, 40 tracks", "The shape of the sample discs FLX505, FLX503TX (track 0 double density too)"},
+        {77, 15, 15, 1, "8\" single-sided, single density, 77 tracks", "TSC's 8\" distribution format; the shape of the sample disc C009"},
+        {77, 26, 15, 1, "8\" single-sided, double density, 77 tracks", "A TSC format (track 0 single density, 15 sectors)"},
+        {77, 30, 30, 2, "8\" double-sided, single density, 77 tracks", "A TSC format"},
+        {77, 52, 30, 2, "8\" double-sided, double density, 77 tracks", "A TSC format (track 0 single density, 30 sectors)"},
     };
     QVector<dw::fs::Preset> out;
     for (const Shape &s : shapes) {
@@ -375,9 +386,12 @@ QVector<dw::fs::Preset> presets() {
         p.doubleSided = s.heads == 2;
         p.titleWhat = "Volume name";
         p.titleMax = VolumeNameLength;
-        p.notes = QString("The shape of the sample discs %1.").arg(s.seen);
+        p.notes = QString("%1.").arg(s.seen);
+        if (s.track0 < s.sectors)
+            p.notes += QString(" The image pads track 0 to %1 sectors; the directory ends at sector %2.").arg(s.sectors).arg(s.track0);
         p.extra["tracks"] = s.tracks;
         p.extra["sectors"] = s.sectors;
+        p.extra["track0"] = s.track0;
         out << p;
     }
     return out;
@@ -405,6 +419,7 @@ bool volumeNameBytes(const QString &name, QByteArray *out, QString *err) {
 bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
                  const QByteArray &boot, QString *err) {
     const int tracks = p.extra.value("tracks").toInt(), sectors = p.extra.value("sectors").toInt();
+    const int track0 = p.extra.value("track0", sectors).toInt();
     QByteArray nameBytes;
     if (!volumeNameBytes(name, &nameBytes, err)) return false;
     Sir s;
@@ -414,7 +429,7 @@ bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &na
     dw::device::Container img;
     img.createBlank(dw::device::Kind::Raw, l, QString("Made by FLEX Disk Wrangler, %1").arg(p.id));
     dw::device::Linear lin(&img, dw::device::SideOrder(), l.bytes());
-    if (!Disk::makeBlank(&lin, tracks, sectors, nameBytes, number, date, err)) return false;
+    if (!Disk::makeBlank(&lin, tracks, sectors, track0, nameBytes, number, date, err)) return false;
     if (!boot.isEmpty()) {
         Disk d;
         if (!d.attach(lin, err) || !d.setBootSectors(boot, TS(), err)) return false;
@@ -429,7 +444,7 @@ bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err) {
     const dw::fs::Candidate *c = v.bestCandidate();
     if (!c || c->fsId != "flex") { *err = QFileInfo(imagePath).fileName() + " isn't a FLEX disc image"; return false; }
     const ProbeResult r = std::any_cast<ProbeResult>(c->data);
-    const dw::device::RawLayout l = layoutOf(r.sir);
+    const dw::device::RawLayout l = layoutOf(r.sir, r.track0);
     if (!img.setRawLayout(l, err)) return false;
     Disk d;
     if (!d.attach(dw::device::Linear(&img, dw::device::SideOrder(), l.bytes()), err)) return false;
@@ -447,20 +462,28 @@ QVector<dw::fs::Candidate> FlexProbe::probe(const dw::fs::ProbeContext &ctx) con
     r.sir = Sir::parse(ctx.stored(qint64(SirSector - 1) * SectorSize, SectorSize));
     QString why;
     if (!sirPlausible(r.sir, size, &why, &r.exact)) return {};
+    if (const int t0 = storedTrack0(r.sir, size))
+        if (endsTrack0(ctx.stored(qint64(t0 - 1) * SectorSize, SectorSize))) {
+            r.track0 = t0;
+            r.exact = true;
+        }
     // the directory's first sector must link to another directory sector on track 0, or end the chain
     const QByteArray dir = ctx.stored(qint64(FirstDirSector - 1) * SectorSize, SectorSize);
     const TS next{int(uchar(dir[0])), int(uchar(dir[1]))};
-    const bool dirOk = next.isNull() || (next.t <= r.sir.lastTrack && next.s >= 1 && next.s <= r.sir.sectors);
+    const int lastOnTrack = next.t == 0 && r.track0 ? r.track0 : r.sir.sectors;
+    const bool dirOk = next.isNull() || (next.t <= r.sir.lastTrack && next.s >= 1 && next.s <= lastOnTrack);
     if (!dirOk) return {};
     dw::fs::Candidate c;
     c.fsId = "flex";
     c.name = "FLEX";
     const QString label = r.sir.labelText();
     c.description = QString("FLEX disc%1, %2 tracks of %3 sectors").arg(label.isEmpty() ? QString() : " " + label)
-                        .arg(r.sir.lastTrack + 1).arg(r.sir.sectors);
+                        .arg(r.sir.lastTrack + 1).arg(r.sir.sectors) + (r.track0 ? QString(" (track 0: %1)").arg(r.track0) : QString());
     c.tier = r.exact ? dw::fs::Tier::Certain : dw::fs::Tier::Possible;
     c.evidence << QString("the SIR describes %1 tracks of %2 sectors").arg(r.sir.lastTrack + 1).arg(r.sir.sectors);
-    if (r.exact) c.evidence << "which is exactly the file's size";
+    if (r.track0) c.evidence << QString("which is exactly the file's size with track 0 stored at its own %1 sectors "
+                                        "(a double-density disc's single-density track 0), its directory ending there").arg(r.track0);
+    else if (r.exact) c.evidence << "which is exactly the file's size";
     else c.notes << QString("the file is %1 bytes; the SIR's geometry is %2").arg(size).arg(qint64(r.sir.lastTrack + 1) * r.sir.sectors * SectorSize);
     c.safeToWrite = r.exact;
     c.data = r;

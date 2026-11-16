@@ -47,6 +47,7 @@ public:
         const QDate d = s.date();
         o["date"] = d.isValid() ? d.toString(Qt::ISODate) : QString();
         o["exactSize"] = probe.exact;
+        o["track0Stored"] = probe.track0 ? probe.track0 : s.sectors;   // track 0's sectors in the image
         if (const Flex::Disk *disk = od.disk()) {
             o["directorySectors"] = disk->dirSectors().size();
             o["deletedEntries"] = disk->deletedEntries();
@@ -91,6 +92,7 @@ QJsonArray Backend::formats() const {
         o["description"] = p.notes;
         o["tracks"] = p.extra.value("tracks").toInt();
         o["sectorsPerTrack"] = p.extra.value("sectors").toInt();
+        o["track0Sectors"] = p.extra.value("track0").toInt();            // the directory ends at its last sector
         o["doubleSided"] = p.doubleSided;
         o["bytes"] = qint64(p.bytes);
         a.append(o);

@@ -71,11 +71,21 @@ bool sirPlausible(const Sir &s, qint64 bytes, QString *why, bool *exact) {
     return true;
 }
 
+int storedTrack0(const Sir &s, qint64 bytes) {
+    if (s.sectors <= FirstDirSector || s.lastTrack < 1 || bytes % SectorSize) return 0;
+    const qint64 t0 = bytes / SectorSize - qint64(s.lastTrack) * s.sectors;
+    return t0 >= FirstDirSector && t0 < s.sectors ? int(t0) : 0;
+}
+
+bool endsTrack0(const QByteArray &sector) {
+    return sector.size() >= 2 && (uchar(sector[0]) != 0 || uchar(sector[1]) == 0);
+}
+
 // ------------------------------------------------------------------------------------------------ reading
 
 bool Disk::readSector(const TS &ts, QByteArray *out, QString *err) const {
     if (!inRange(ts)) { *err = QString("sector %1 is not on the disc").arg(ts.toString()); return false; }
-    return m_disc.read((qint64(ts.t) * m_sir.sectors + ts.s - 1) * SectorSize, SectorSize, out, err);
+    return m_disc.read(offsetOf(ts), SectorSize, out, err);
 }
 
 bool Disk::attach(const dw::device::Linear &disc, QString *err) {
@@ -93,6 +103,11 @@ bool Disk::reload(QString *err) {
     m_sir = Sir::parse(s);
     bool exact = false;
     if (!sirPlausible(m_sir, m_disc.size(), err, &exact)) return false;
+    m_t0 = m_sir.sectors;
+    if (const int t0 = storedTrack0(m_sir, m_disc.size())) {
+        if (!m_disc.read(qint64(t0 - 1) * SectorSize, SectorSize, &s, err)) return false;
+        if (endsTrack0(s)) m_t0 = t0;
+    }
     return readDirectory(err);
 }
 
@@ -627,21 +642,27 @@ bool Disk::setBootLink(const TS &to, QString *err) {
 // ------------------------------------------------------------------------------------------------ a new disc
 
 // NEWDISK (TSC's, FLEX 2.0 and FLEX 9.0 alike): every sector formatted with a link to the next, data and record
-// numbers zero; the SIR written; the last sector of track 0 made the directory's end. NEWDISK then puts its boot
+// numbers zero; the SIR written; the last sector of track 0 made the directory's end. On a double-density disc
+// track 0 is single density and shorter (the Adaptation Guide's skeletal NEWDISK, Appendix F): the directory ends at
+// its last sector, and the SIR's sectors per track are the other tracks'. NEWDISK then puts its boot
 // loader in sector 1; this program leaves sector 1 empty.
-bool Disk::makeBlank(dw::device::Linear *disc, int tracks, int sectors, const QByteArray &name, int number, const QDate &date, QString *err) {
+bool Disk::makeBlank(dw::device::Linear *disc, int tracks, int sectors, int track0, const QByteArray &name, int number,
+                     const QDate &date, QString *err) {
     if (sectors < FirstDirSector || sectors > 255) { *err = "a FLEX disc has 5 to 255 sectors per track"; return false; }
+    if (track0 < FirstDirSector || track0 > sectors) { *err = "track 0 has 5 sectors or more, and no more than the other tracks"; return false; }
     if (tracks < 2 || tracks > 256) { *err = "a FLEX disc has 2 to 256 tracks"; return false; }
-    if (disc->size() != qint64(tracks) * sectors * SectorSize) { *err = "the disc's size isn't its geometry's"; return false; }
+    const qint64 padded = qint64(tracks) * sectors * SectorSize, stored = (track0 + qint64(tracks - 1) * sectors) * SectorSize;
+    if (disc->size() != padded && disc->size() != stored) { *err = "the disc's size isn't its geometry's"; return false; }
     if (name.size() > VolumeNameLength) { *err = QString("a FLEX volume name has up to %1 characters").arg(VolumeNameLength); return false; }
     if (number < 0 || number > 0xFFFF) { *err = "a FLEX volume number is 0 to 65535"; return false; }
+    const qint64 t0Stored = disc->size() == padded ? sectors : track0;   // track 0's sectors in the image
     QByteArray d(int(disc->size()), '\0');
     for (int t = 0; t < tracks; ++t)
-        for (int s = 1; s <= sectors; ++s) {
-            const int off = (t * sectors + s - 1) * SectorSize;
+        for (int s = 1; s <= (t == 0 ? track0 : sectors); ++s) {
+            const int off = int(((t == 0 ? 0 : t0Stored + qint64(t - 1) * sectors) + s - 1) * SectorSize);
             TS link;
-            if (t == 0 && s == sectors) link = TS();                 // the directory's last sector
-            else if (s < sectors) link = TS(t, s + 1);
+            if (t == 0 && s == track0) link = TS();                  // the directory's last sector
+            else if (s < (t == 0 ? track0 : sectors)) link = TS(t, s + 1);
             else if (t + 1 < tracks) link = TS(t + 1, 1);
             if (t == 0 && (s == 1 || s == SirSector)) link = TS();   // the loader's sector (empty) and the SIR
             d[off] = char(link.t);

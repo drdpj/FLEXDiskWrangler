@@ -27,6 +27,26 @@ import time
 SEC = 256
 
 
+def track0_of(data):
+    """Track 0's sectors in the image. A double-density disc's track 0 is single density, with fewer sectors (TSC's
+    6809 FLEX Adaptation Guide, Appendix B); an image may store it at its own size: then the file is exactly
+    (T + last track * sectors) * 256 bytes for some 5 <= T < sectors, and sector (0, T), the last of track 0's directory,
+    doesn't link to another sector of track 0 (in a full track 0 it links to (0, T + 1))."""
+    spt, lt = data[2 * SEC + 0x27], data[2 * SEC + 0x26]
+    if len(data) % SEC or spt <= 5 or lt < 1:
+        return spt
+    t0 = len(data) // SEC - lt * spt
+    if 5 <= t0 < spt:
+        link = data[(t0 - 1) * SEC:(t0 - 1) * SEC + 2]
+        if link[0] != 0 or link[1] == 0:
+            return t0
+    return spt
+
+
+def sector_offset(ts, spt, t0):
+    return ((ts[1] - 1) if ts[0] == 0 else (t0 + (ts[0] - 1) * spt + ts[1] - 1)) * SEC
+
+
 # ----------------------------------------------------------------------------------------------- reading
 
 class Disc:
@@ -41,15 +61,16 @@ class Disc:
         self.date = (sir[0x23], sir[0x24], sir[0x25])
         self.last_track = sir[0x26]
         self.spt = sir[0x27]
+        self.t0 = track0_of(data) if len(data) >= 3 * SEC else self.spt
 
     def geometry_ok(self):
         return self.spt >= 5 and self.last_track >= 1 and (self.last_track + 1) * self.spt * SEC <= len(self.d) + self.spt * SEC
 
     def ok_ts(self, ts):
-        return 0 <= ts[0] <= self.last_track and 1 <= ts[1] <= self.spt
+        return 0 <= ts[0] <= self.last_track and 1 <= ts[1] <= (self.t0 if ts[0] == 0 else self.spt)
 
     def sector(self, ts):
-        off = (ts[0] * self.spt + ts[1] - 1) * SEC
+        off = sector_offset(ts, self.spt, self.t0)
         b = self.d[off:off + SEC]
         return b + bytes(SEC - len(b))
 
@@ -167,7 +188,7 @@ def read(path):
             'size': max(0, f['sectors'] - (2 if f['random'] else 0)) * 252,
             'sha256': hashlib.sha256(data).hexdigest() if data is not None else None,
         })
-    return {'flex': True, 'tracks': d.last_track + 1, 'sectors': d.spt, 'label': d.label.split(b'\0')[0].decode('latin-1').strip(),
+    return {'flex': True, 'tracks': d.last_track + 1, 'sectors': d.spt, 'track0': d.t0, 'label': d.label.split(b'\0')[0].decode('latin-1').strip(),
             'files': out, 'deleted': deleted, 'errors': d.errors()}
 
 
@@ -175,18 +196,21 @@ def read(path):
 
 class Maker:
     """A FLEX disc built the way FLEX lays one out: boot sectors, the SIR, directory sectors to the end of track 0,
-    files taken from the start of the free chain, the rest of the disc in the free chain."""
+    files taken from the start of the free chain, the rest of the disc in the free chain. t0: track 0's sectors (fewer on
+    a double-density disc); short: the image stores track 0 at its own size, else padded to the full track."""
 
-    def __init__(self, tracks, spt, label=b'TEST', volnum=1, date=(11, 15, 26)):
+    def __init__(self, tracks, spt, label=b'TEST', volnum=1, date=(11, 15, 26), t0=None, short=False):
         self.t, self.s = tracks, spt
-        self.d = bytearray(tracks * spt * SEC)
+        self.t0 = t0 or spt
+        self.t0_stored = self.t0 if short else spt
+        self.d = bytearray((self.t0_stored + (tracks - 1) * spt) * SEC)
         self.free = [(t, s) for t in range(1, tracks) for s in range(1, spt + 1)]
-        self.dir = [(0, s) for s in range(5, spt + 1)]
+        self.dir = [(0, s) for s in range(5, self.t0 + 1)]
         self.entries = []
         self.label, self.volnum, self.date = label, volnum, date
 
     def off(self, ts):
-        return (ts[0] * self.s + ts[1] - 1) * SEC
+        return sector_offset(ts, self.s, self.t0_stored)
 
     def put(self, ts, link, rec, data):
         o = self.off(ts)
@@ -353,6 +377,29 @@ def make(outdir):
     # noise.bin: random bytes, nothing at all
     write('noise.bin', bytes(rnd.randrange(256) for _ in range(80 * SEC)))
 
+    # short0.dsk: 77 x 26 (8" single-sided, double density) with its single-density track 0 of 15 sectors stored at its
+    # own size; the 11 directory sectors full (110 entries), so a new file makes the directory grow onto track 1
+    own = random.Random(1977)
+    m = Maker(77, 26, b'SHORT0', 77, (11, 16, 26), t0=15, short=True)
+    m.add(b'README', b'TXT', text, date=(3, 20, 84))
+    m.add(b'DATA', b'RAN', bytes(own.randrange(256) for _ in range(40 * 252)), random_=True, date=(6, 1, 81))
+    for i in range(108):
+        m.add(b'F%03d' % i, b'BIN', bytes([i]) * (50 + i * 7), date=(1 + i % 12, 1 + i % 28, 82))
+    write('short0.dsk', m.finish())
+
+    # pad0.dsk: 35 x 18 (5.25" single-sided, double density) with track 0 of 10 sectors padded to 18 in the image, as
+    # the sample EFORTH is: the directory ends at 0/10, sectors 11-18 of track 0 belong to nothing
+    m = Maker(35, 18, b'PADDED', 18, (11, 16, 26), t0=10)
+    m.add(b'README', b'TXT', text, date=(3, 20, 84))
+    m.add(b'PROG', b'CMD', binary, date=(4, 1, 85))
+    write('pad0.dsk', m.finish())
+
+    # cut.dsk: a 77 x 26 disc with a full track 0, less its last 11 sectors: its size is a short track 0's of 15
+    # sectors, but sector 0/15 links on to 0/16, so it is a full track 0 in a file too short (a "possible" reading)
+    m = Maker(77, 26, b'CUT', 26, (11, 16, 26))
+    m.add(b'README', b'TXT', text, date=(3, 20, 84))
+    write('cut.dsk', bytes(m.finish()[:-11 * SEC]))
+
 
 
 # ----------------------------------------------------------------------------------------------- writing, as FLEX does
@@ -369,9 +416,10 @@ class Fms:
         self.d = bytearray(data)
         self.spt = self.d[2 * SEC + 0x27]
         self.lt = self.d[2 * SEC + 0x26]
+        self.t0 = track0_of(bytes(self.d))
 
     def off(self, ts):
-        return (ts[0] * self.spt + ts[1] - 1) * SEC
+        return sector_offset(ts, self.spt, self.t0)
 
     def sec(self, ts):
         return bytearray(self.d[self.off(ts):self.off(ts) + SEC])
@@ -529,14 +577,16 @@ class Fms:
         self.d[o:o + 8] = name.encode('latin-1').ljust(8, b'\0')
 
     @staticmethod
-    def new(tracks, spt, label, number, date):
-        """NEWDISK: every sector linked to the next, the SIR, the directory to the end of track 0; sector 1 empty."""
+    def new(tracks, spt, t0, label, number, date):
+        """NEWDISK: every sector linked to the next, the SIR, the directory to the end of track 0; sector 1 empty. A
+        double-density disc's track 0 has t0 sectors (single density): the image pads it to spt, the rest zero."""
         d = bytearray(tracks * spt * SEC)
         for t in range(tracks):
-            for s in range(1, spt + 1):
-                if (t, s) in ((0, 1), (0, 3), (0, spt)):
+            last = t0 if t == 0 else spt
+            for s in range(1, last + 1):
+                if (t, s) in ((0, 1), (0, 3), (0, t0)):
                     link = (0, 0)
-                elif s < spt:
+                elif s < last:
                     link = (t, s + 1)
                 elif t + 1 < tracks:
                     link = (t + 1, 1)
@@ -663,7 +713,7 @@ def writes(flexdw, syn, samples=None):
             c = run('new', img, '--format=' + f['id'], '--title=NEWDISC')
             with open(img, 'rb') as fh:
                 got = fh.read()
-            want = Fms.new(f['tracks'], f['sectorsPerTrack'], 'NEWDISC', 0, EPOCH_DATE)
+            want = Fms.new(f['tracks'], f['sectorsPerTrack'], f['track0Sectors'], 'NEWDISC', 0, EPOCH_DATE)
             if c != 0 or got != want:
                 bad += 1
                 print('new %s: DIFFERENT from NEWDISK\'s layout (exit %d)' % (f['id'], c))
@@ -700,6 +750,22 @@ def writes(flexdw, syn, samples=None):
             ('copy', basic, 'DATA.RAN'),                                  # 11 runs
             ('put', 'SEQ.BIN', blob(5000), (8, 8, 88)),
         ])
+        scenario('short0.dsk: a short track 0 stored at its own size; the directory grows onto track 1',
+                 os.path.join(syn, 'short0.dsk'), [
+            ('put', 'GROW.TXT', b'the directory grows\r' * 30, (11, 16, 86)),  # 110 slots full: a new directory sector
+            ('rm', 'README.TXT'),
+            ('copy', basic, 'DATA.RAN'),
+            ('put', 'BIG.BIN', blob(200 * 252), (11, 16, 86)),
+            ('mv', 'F007.BIN', 'SEVEN.BIN'),
+            ('rm', 'DATA.RAN'),
+        ])
+        scenario('pad0.dsk: a short track 0 padded to the full track', os.path.join(syn, 'pad0.dsk'), [
+            ('put', 'NEW.TXT', b'padded\r' * 50, (11, 16, 86)), ('rm', 'README.TXT'), ('copy', random_dsk, 'RAN200.DAT'),
+        ])
+        new52 = os.path.join(tmp, 'new-flex-77x52.dsk')
+        scenario('a new 77 x 52 disc (track 0 of 30): files in, the directory grown past track 0', new52, [
+            ('put', 'F%03d.TXT' % i, b'%d\r' % i, (1, 2, 3)) for i in range(261)
+        ] + [('rm', 'F100.TXT'), ('copy', random_dsk, 'RAN300.DAT')])
         new35 = os.path.join(tmp, 'new-flex-35x10.dsk')
         scenario('a new 35 x 10 disc: filled to the last sector, emptied, filled again', new35, [
             ('put', 'TOOBIG.BIN', blob(340 * 252 + 1), (1, 2, 3)),        # one byte more than the disc holds: refused

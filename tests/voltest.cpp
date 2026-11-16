@@ -57,7 +57,7 @@ static QString describe(const Flex::Disk &d) {
     const Flex::Sir &s = d.sir();
     out << QString("sir %1 %2 %3-%4 %5 %6/%7").arg(QString::fromLatin1(s.label.toHex())).arg(s.volumeNumber).arg(s.firstFree.toString(), s.lastFree.toString())
                .arg(s.freeCount).arg(s.lastTrack).arg(s.sectors);
-    out << QString("dir %1 deleted %2 free %3").arg(d.dirSectors().size()).arg(d.deletedEntries()).arg(d.freeSlots());
+    out << QString("dir %1 deleted %2 free %3 track0 %4").arg(d.dirSectors().size()).arg(d.deletedEntries()).arg(d.freeSlots()).arg(d.track0Sectors());
     return out.join("\n");
 }
 
@@ -71,6 +71,9 @@ static void detection(const QString &dir) {
         {"big.dsk", "flex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
         {"empty.dsk", "flex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
         {"short.dsk", "flex", dw::fs::Tier::Possible, true, dw::fs::Verdict::Open},
+        {"short0.dsk", "flex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
+        {"pad0.dsk", "flex", dw::fs::Tier::Certain, true, dw::fs::Verdict::Open},
+        {"cut.dsk", "flex", dw::fs::Tier::Possible, true, dw::fs::Verdict::Open},
         {"os9.dsk", "os9", dw::fs::Tier::Likely, false, dw::fs::Verdict::Open},
         {"uniflex.dsk", "uniflex", dw::fs::Tier::Possible, false, dw::fs::Verdict::Open},
     };
@@ -250,6 +253,7 @@ static void newDiscs(const QString &dir, const QString &work) {
         const QString path = work + "/" + p.id + ".dsk";
         QFile::remove(path);
         const int tracks = p.extra.value("tracks").toInt(), sectors = p.extra.value("sectors").toInt();
+        const int track0 = p.extra.value("track0").toInt();
         CHECK(Flex::createBlank(path, p, "NEW", 9, QDate(2026, 11, 15), QByteArray(), &err), p.id + " made: " + err);
         const dw::fs::Verdict vd = verdictOf(path);
         Flex::OpenedDisc od;
@@ -258,8 +262,10 @@ static void newDiscs(const QString &dir, const QString &work) {
         if (!od.disk()) continue;
         const Flex::Sir &s = od.disk()->sir();
         CHECK(s.labelText() == "NEW" && s.volumeNumber == 9 && s.date() == QDate(2026, 11, 15) && s.freeCount == (tracks - 1) * sectors &&
-              s.firstFree == Flex::TS(1, 1) && s.lastFree == Flex::TS(tracks - 1, sectors) && od.disk()->dirSectors().size() == sectors - 4 &&
-              od.disk()->files().isEmpty() && !od.disk()->hasLoader(), p.id + ": SIR, free chain, empty directory, no loader");
+              s.firstFree == Flex::TS(1, 1) && s.lastFree == Flex::TS(tracks - 1, sectors) && od.disk()->dirSectors().size() == track0 - 4 &&
+              od.disk()->dirSectors().last() == Flex::TS(0, track0) && od.disk()->track0Sectors() == sectors &&
+              od.disk()->files().isEmpty() && !od.disk()->hasLoader(),
+              p.id + QString(": SIR, free chain, empty directory to 0/%1 (the image padded), no loader").arg(track0));
         const dw::fs::Report r = od.disc().volume(0)->check();
         CHECK(r.ok() && r.warnings.isEmpty(), p.id + ": no problems");
     }
@@ -298,6 +304,50 @@ static void newDiscs(const QString &dir, const QString &work) {
                                                        && od.disk()->setBootLink(od.disk()->files()[0].start, e); }, &err) &&
               od.disk()->bootLink() == Flex::TS(1, 1), "FLEX.SYS added and linked: the loader points at 1/1");
     }
+}
+
+// A double-density disc's single-density track 0 (the Adaptation Guide, Appendix B): stored at its own size (short0.dsk,
+// 77 x 26 with a track 0 of 15), padded to the full track (pad0.dsk, as the sample EFORTH), and a full track 0 in a file
+// whose size happens to be a short one's (cut.dsk).
+static void track0(const QString &dir, const QString &work) {
+    printf("track 0 single density: stored short, padded, and a file that only looks short\n");
+    const QString path = work + "/short0.dsk";
+    QFile::remove(path);
+    QFile::copy(dir + "/short0.dsk", path);
+    const qint64 size = QFileInfo(path).size();
+    Flex::OpenedDisc od;
+    QString err;
+    CHECK(openDisc(path, &od, &err) && od.readOnlyWhy(0).isEmpty(), "short0.dsk opens writable: " + err + od.readOnlyWhy(0));
+    if (!od.disk()) return;
+    const Flex::Disk &d = *od.disk();
+    CHECK(d.shortTrack0() && d.track0Sectors() == 15 && d.sectorsPerTrack() == 26 && d.inRange(Flex::TS(0, 15)) &&
+          !d.inRange(Flex::TS(0, 16)) && d.inRange(Flex::TS(1, 26)), "track 0 of 15 sectors, the others 26");
+    CHECK(d.files().size() == 110 && d.dirSectors().size() == 11 && d.freeSlots() == 0, "110 files, the directory 0/5 to 0/15, full");
+    const dw::fs::Report r = od.disc().volume(0)->check();
+    CHECK(r.ok() && r.warnings.isEmpty(), "no problems: " + r.errors.join("; ") + r.warnings.join("; "));
+    dw::fs::Volume *v = od.disc().volume(0);
+    QString e;
+    const bool ok = od.disc().transact([&](QString *e2) { return v->write(Path(), "GROW.TXT", "grows", {}, QDateTime(), false, e2); }, &e);
+    const QString after = describe(d);
+    QString re;
+    CHECK(ok && d.dirSectors().size() == 12 && d.dirSectors().last().t >= 1 && v->check().ok() && v->reload(&re) && describe(d) == after,
+          "a new file: the directory grows onto track 1; reload faithful: " + e);
+    CHECK(od.save(false, &err) && QFileInfo(path).size() == size, "saved, track 0 still stored short: " + err);
+    Flex::OpenedDisc again;
+    CHECK(openDisc(path, &again, &err) && again.disk()->track0Sectors() == 15 && describe(*again.disk()) == after, "read back the same");
+    const QString copy = work + "/short0-copy.dsk";
+    QFile::remove(copy);
+    Flex::OpenedDisc c2;
+    CHECK(od.saveAs(copy, dw::device::Kind::Raw, &err) && QFileInfo(copy).size() == size && openDisc(copy, &c2, &err) &&
+          describe(*c2.disk()) == after, "Save As: the same layout: " + err);
+
+    Flex::OpenedDisc pd;
+    CHECK(openDisc(dir + "/pad0.dsk", &pd, &err) && pd.readOnlyWhy(0).isEmpty() && pd.disk()->track0Sectors() == 18 &&
+          pd.disk()->dirSectors().size() == 6 && pd.disk()->files().size() == 2 && pd.disc().volume(0)->check().ok(),
+          "pad0.dsk: track 0 padded, the directory 0/5 to 0/10, writable");
+    Flex::OpenedDisc cd;
+    CHECK(openDisc(dir + "/cut.dsk", &cd, &err) && !cd.disk()->shortTrack0() && cd.disk()->track0Sectors() == 26 && !cd.readOnlyWhy(0).isEmpty(),
+          "cut.dsk: 0/15 links on to 0/16, so a full track 0 in a short file, read-only: " + cd.readOnlyWhy(0));
 }
 
 static void faults(const QString &dir) {
@@ -403,6 +453,7 @@ int main(int argc, char **argv) {
     basic(dir, work);
     changes(dir, work);
     newDiscs(dir, work);
+    track0(dir, work);
     faults(dir);
     names();
     if (argc > 2) samples(QString::fromLocal8Bit(argv[2]));

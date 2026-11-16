@@ -86,6 +86,7 @@ private:
 struct ProbeResult {
     Sir sir;
     bool exact = false;                          // the SIR's geometry is exactly the file's size
+    int track0 = 0;                              // track 0 stored short, with this many sectors (0: a full track)
 };
 
 // The opened image: the container and the FLEX volume on it (one mount, "FLEX"). It is the window's Document and
@@ -137,8 +138,10 @@ dw::fs::OtherApp self();
 dw::app::AppInfo appInfo(const QString &version);
 
 // ----- new discs
-// The presets: the shapes of the sample discs (docs/disc-format.md), source "flex", each with extra "tracks" and
-// "sectors". addPresets puts them in the core's registry (once); presets() gives them in order.
+// The presets: the shapes of the sample discs and TSC's formats (the 6809 FLEX Adaptation Guide, Appendix B;
+// docs/disc-format.md), source "flex", each with extra "tracks", "sectors" and "track0" (track 0's sectors: fewer on a
+// double-density disc, whose track 0 is single density). The image is always the full geometry, a short track 0
+// padded as the sample EFORTH's is. addPresets puts them in the core's registry (once); presets() gives them in order.
 void addPresets();
 QVector<dw::fs::Preset> presets();
 const dw::fs::Preset *findPreset(const QString &id);
@@ -154,7 +157,8 @@ bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err);
 // ----- detection by tiers
 // A FLEX disc in a raw file: the SIR's geometry fits the file and the directory can be read. Certain when the
 // geometry is exactly the file's size and the directory's chain starts on the disc; Possible when the file is a
-// little longer or shorter than the geometry. data is a ProbeResult.
+// little longer or shorter than the geometry. A double-density disc's single-density track 0 stored at its own size
+// (storedTrack0, confirmed by endsTrack0) is exact too. data is a ProbeResult.
 class FlexProbe : public dw::fs::Probe {
 public:
     QString id() const override { return "flex"; }
