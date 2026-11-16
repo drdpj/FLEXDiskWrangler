@@ -16,6 +16,7 @@
             "freeSectors": 982,
             "label": "BIGDISC",
             "sectorsPerTrack": 36,
+            "track0Stored": 36,
             "tracks": 40,
             "volumeNumber": 505
         },

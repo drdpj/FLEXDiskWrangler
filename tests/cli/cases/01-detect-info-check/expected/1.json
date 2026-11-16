@@ -16,6 +16,7 @@
             "freeSectors": 352,
             "label": "BASIC",
             "sectorsPerTrack": 10,
+            "track0Stored": 10,
             "tracks": 40,
             "volumeNumber": 42
         },

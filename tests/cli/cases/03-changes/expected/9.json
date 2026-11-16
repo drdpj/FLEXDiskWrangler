@@ -11,56 +11,102 @@
         "formats": [
             {
                 "bytes": 89600,
-                "description": "The shape of the sample discs FLEX2_A, FLEX2_B, FL2_0SWT, FLEX2-01, ABASIC_1.",
+                "description": "TSC's 5.25\" distribution format; the shape of the sample discs FLEX2_A, FLEX2_B, FL2_0SWT, FLEX2-01, ABASIC_1.",
                 "doubleSided": false,
                 "id": "flex-35x10",
                 "name": "FLEX, 35 tracks of 10 sectors (5.25\" single-sided, single density, 35 tracks, 87.5K)",
                 "sectorsPerTrack": 10,
+                "track0Sectors": 10,
                 "tracks": 35
             },
             {
                 "bytes": 102400,
-                "description": "The shape of the sample discs SYS900, D_MAN_1, DMDR_SC1.",
+                "description": "A TSC format; the shape of the sample discs SYS900, D_MAN_1, DMDR_SC1.",
                 "doubleSided": false,
                 "id": "flex-40x10",
                 "name": "FLEX, 40 tracks of 10 sectors (5.25\" single-sided, single density, 40 tracks, 100K)",
                 "sectorsPerTrack": 10,
+                "track0Sectors": 10,
                 "tracks": 40
             },
             {
                 "bytes": 161280,
-                "description": "The shape of the sample discs EFORTH.",
+                "description": "The shape of the sample disc EFORTH (track 0 single density, 10 sectors). The image pads track 0 to 18 sectors; the directory ends at sector 10.",
                 "doubleSided": false,
                 "id": "flex-35x18",
                 "name": "FLEX, 35 tracks of 18 sectors (5.25\" single-sided, double density, 35 tracks, 157.5K)",
                 "sectorsPerTrack": 18,
+                "track0Sectors": 10,
+                "tracks": 35
+            },
+            {
+                "bytes": 179200,
+                "description": "A TSC format.",
+                "doubleSided": true,
+                "id": "flex-35x20",
+                "name": "FLEX, 35 tracks of 20 sectors (5.25\" double-sided, single density, 35 tracks, 175K)",
+                "sectorsPerTrack": 20,
+                "track0Sectors": 20,
                 "tracks": 35
             },
             {
                 "bytes": 204800,
-                "description": "The shape of the sample discs DSTAR23.",
+                "description": "A TSC format; the shape of the sample disc DSTAR23.",
                 "doubleSided": true,
                 "id": "flex-40x20",
                 "name": "FLEX, 40 tracks of 20 sectors (5.25\" double-sided, single density, 40 tracks, 200K)",
                 "sectorsPerTrack": 20,
+                "track0Sectors": 20,
                 "tracks": 40
             },
             {
                 "bytes": 368640,
-                "description": "The shape of the sample discs FLX505, FLX503TX.",
+                "description": "The shape of the sample discs FLX505, FLX503TX (track 0 double density too).",
                 "doubleSided": true,
                 "id": "flex-40x36",
                 "name": "FLEX, 40 tracks of 36 sectors (5.25\" double-sided, double density, 40 tracks, 360K)",
                 "sectorsPerTrack": 36,
+                "track0Sectors": 36,
                 "tracks": 40
             },
             {
                 "bytes": 295680,
-                "description": "The shape of the sample discs C009.",
+                "description": "TSC's 8\" distribution format; the shape of the sample disc C009.",
                 "doubleSided": false,
                 "id": "flex-77x15",
                 "name": "FLEX, 77 tracks of 15 sectors (8\" single-sided, single density, 77 tracks, 288.8K)",
                 "sectorsPerTrack": 15,
+                "track0Sectors": 15,
+                "tracks": 77
+            },
+            {
+                "bytes": 512512,
+                "description": "A TSC format (track 0 single density, 15 sectors). The image pads track 0 to 26 sectors; the directory ends at sector 15.",
+                "doubleSided": false,
+                "id": "flex-77x26",
+                "name": "FLEX, 77 tracks of 26 sectors (8\" single-sided, double density, 77 tracks, 500.5K)",
+                "sectorsPerTrack": 26,
+                "track0Sectors": 15,
+                "tracks": 77
+            },
+            {
+                "bytes": 591360,
+                "description": "A TSC format.",
+                "doubleSided": true,
+                "id": "flex-77x30",
+                "name": "FLEX, 77 tracks of 30 sectors (8\" double-sided, single density, 77 tracks, 577.5K)",
+                "sectorsPerTrack": 30,
+                "track0Sectors": 30,
+                "tracks": 77
+            },
+            {
+                "bytes": 1025024,
+                "description": "A TSC format (track 0 single density, 30 sectors). The image pads track 0 to 52 sectors; the directory ends at sector 30.",
+                "doubleSided": true,
+                "id": "flex-77x52",
+                "name": "FLEX, 77 tracks of 52 sectors (8\" double-sided, double density, 77 tracks, 1001K)",
+                "sectorsPerTrack": 52,
+                "track0Sectors": 30,
                 "tracks": 77
             }
         ]
