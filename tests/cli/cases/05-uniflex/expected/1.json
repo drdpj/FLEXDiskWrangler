@@ -79,8 +79,8 @@
                     "dirs": true,
                     "maxEntriesPerDir": -1,
                     "namespaces": false,
-                    "rename": false,
-                    "renameAcrossDirs": false,
+                    "rename": true,
+                    "renameAcrossDirs": true,
                     "settableDates": false,
                     "title": true
                 },
@@ -205,8 +205,8 @@
                     "total": 304128
                 },
                 "label": "UniFLEX",
-                "readOnly": true,
-                "readOnlyWhy": "UniFLEX discs are read-only in this version of FLEX Disk Wrangler",
+                "readOnly": false,
+                "readOnlyWhy": null,
                 "vol": "uniflex",
                 "volumeAttrSpecs": [
                     {
@@ -214,7 +214,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "label",
                         "label": "Pack name",
                         "type": "text"
@@ -224,7 +224,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "fsName",
                         "label": "File system name",
                         "type": "text"
@@ -234,7 +234,7 @@
                         "choices": [
                         ],
                         "dirs": false,
-                        "editable": false,
+                        "editable": true,
                         "key": "number",
                         "label": "File system number",
                         "type": "int"

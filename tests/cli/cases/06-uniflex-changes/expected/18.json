@@ -1,15 +1,15 @@
 {
     "changes": [
     ],
-    "command": "get",
+    "command": "put",
     "dryRun": false,
     "error": {
-        "code": 1,
-        "kind": "failed",
-        "message": "/src/big.dat: a double or triple indirect block names block 649, outside the volume (6-599)",
-        "path": "/src/big.dat"
+        "code": 4,
+        "kind": "check",
+        "message": "uniflex has errors (see check), so nothing was changed",
+        "path": null
     },
-    "exit": 1,
+    "exit": 4,
     "image": "img-bad.dsk",
     "ok": false,
     "result": {

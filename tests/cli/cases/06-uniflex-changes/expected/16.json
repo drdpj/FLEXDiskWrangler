@@ -5,16 +5,15 @@
     "dryRun": false,
     "error": null,
     "exit": 0,
-    "image": "img-odd.dsk",
+    "image": "img.dsk",
     "ok": true,
     "result": {
         "errors": [
         ],
         "info": [
-            "3 files and 1 directories; 193 of 200 blocks free; 12 of 16 fdns free"
+            "9 files and 4 directories; 584 of 600 blocks free; 19 of 32 fdns free"
         ],
         "warnings": [
-            "/\\x0adynacalc: a name with characters other than printable ASCII"
         ]
     },
     "saved": false,

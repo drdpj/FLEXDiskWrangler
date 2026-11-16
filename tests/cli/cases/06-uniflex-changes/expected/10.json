@@ -1,0 +1,26 @@
+{
+    "changes": [
+        {
+            "from": null,
+            "note": "othersWrite=true owner=7",
+            "op": "attr",
+            "path": "/done/Note",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "attr",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "changed": 1
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

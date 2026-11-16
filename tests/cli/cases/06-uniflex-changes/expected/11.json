@@ -1,0 +1,23 @@
+{
+    "changes": [
+    ],
+    "command": "rm",
+    "dryRun": false,
+    "error": {
+        "code": 6,
+        "kind": "unsupported",
+        "message": "/src is a directory: use -r",
+        "path": "/src"
+    },
+    "exit": 6,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

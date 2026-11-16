@@ -1,0 +1,23 @@
+{
+    "changes": [
+    ],
+    "command": "mv",
+    "dryRun": false,
+    "error": {
+        "code": 1,
+        "kind": "failed",
+        "message": "/src/made: a directory can't be moved into itself or a directory inside it",
+        "path": "/src/made"
+    },
+    "exit": 1,
+    "image": "img.dsk",
+    "ok": false,
+    "result": {
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

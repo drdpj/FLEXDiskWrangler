@@ -1,23 +1,31 @@
 {
     "changes": [
     ],
-    "command": "put",
+    "command": "check",
     "dryRun": false,
     "error": {
-        "code": 6,
-        "kind": "unsupported",
-        "message": "read-only: UniFLEX discs are read-only in this version of FLEX Disk Wrangler",
+        "code": 4,
+        "kind": "check",
+        "message": "1 error(s) found",
         "path": null
     },
-    "exit": 6,
-    "image": "img.dsk",
+    "exit": 4,
+    "image": "img-bad.dsk",
     "ok": false,
     "result": {
+        "errors": [
+            "/src/big.dat: a double or triple indirect block names block 649, outside the volume (6-599)"
+        ],
+        "info": [
+            "12 files and 5 directories; 417 of 600 blocks free; 16 of 32 fdns free"
+        ],
+        "warnings": [
+        ]
     },
     "saved": false,
     "schema": 1,
     "tool": "flexdw",
-    "vol": "UniFLEX",
+    "vol": null,
     "warnings": [
     ]
 }

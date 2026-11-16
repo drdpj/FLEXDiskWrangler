@@ -1,23 +1,26 @@
 {
     "changes": [
     ],
-    "command": "mv",
+    "command": "check",
     "dryRun": false,
-    "error": {
-        "code": 6,
-        "kind": "unsupported",
-        "message": "read-only: UniFLEX discs are read-only in this version of FLEX Disk Wrangler",
-        "path": null
-    },
-    "exit": 6,
-    "image": "img.dsk",
-    "ok": false,
+    "error": null,
+    "exit": 0,
+    "image": "img-odd.dsk",
+    "ok": true,
     "result": {
+        "errors": [
+        ],
+        "info": [
+            "3 files and 1 directories; 193 of 200 blocks free; 12 of 16 fdns free"
+        ],
+        "warnings": [
+            "/\\x0adynacalc: a name with characters other than printable ASCII"
+        ]
     },
     "saved": false,
     "schema": 1,
     "tool": "flexdw",
-    "vol": "UniFLEX",
+    "vol": null,
     "warnings": [
     ]
 }

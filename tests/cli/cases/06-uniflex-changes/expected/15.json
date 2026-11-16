@@ -1,0 +1,349 @@
+{
+    "changes": [
+    ],
+    "command": "ls",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "entries": [
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 2,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": false,
+                    "othersWrite": false,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": false,
+                    "ownerWrite": false,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/.badblocks",
+                "kind": "file",
+                "modified": "1985-04-25T19:22:40",
+                "name": ".badblocks",
+                "path": [
+                    ".badblocks"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 32,
+                    "links": 2,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "directory"
+                },
+                "created": null,
+                "display": "/done",
+                "kind": "dir",
+                "modified": "2000-01-01T00:00:00",
+                "name": "done",
+                "path": [
+                    "done"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 3,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/done/readme",
+                "kind": "file",
+                "modified": "2000-01-01T00:00:00",
+                "name": "readme",
+                "path": [
+                    "done",
+                    "readme"
+                ],
+                "problem": null,
+                "size": 49,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 31,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 7,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/done/Note",
+                "kind": "file",
+                "modified": "2000-01-01T00:00:00",
+                "name": "Note",
+                "path": [
+                    "done",
+                    "Note"
+                ],
+                "problem": null,
+                "size": 7,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 4,
+                    "links": 1,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": false,
+                    "owner": 3,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/Prog",
+                "kind": "file",
+                "modified": "1985-04-25T19:24:40",
+                "name": "Prog",
+                "path": [
+                    "Prog"
+                ],
+                "problem": null,
+                "size": 768,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 5,
+                    "links": 2,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": false,
+                    "owner": 0,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": false,
+                    "setUserId": false,
+                    "type": "directory"
+                },
+                "created": null,
+                "display": "/bin",
+                "kind": "dir",
+                "modified": "1985-04-25T19:22:40",
+                "name": "bin",
+                "path": [
+                    "bin"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 6,
+                    "links": 1,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": false,
+                    "owner": 0,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": false,
+                    "setUserId": true,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/bin/hello",
+                "kind": "file",
+                "modified": "1985-04-25T19:25:40",
+                "name": "hello",
+                "path": [
+                    "bin",
+                    "hello"
+                ],
+                "problem": null,
+                "size": 150,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 12,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/fourteen_chars",
+                "kind": "file",
+                "modified": "1985-04-25T19:29:40",
+                "name": "fourteen_chars",
+                "path": [
+                    "fourteen_chars"
+                ],
+                "problem": null,
+                "size": 2,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 13,
+                    "links": 2,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "directory"
+                },
+                "created": null,
+                "display": "/dev",
+                "kind": "dir",
+                "modified": "1985-04-25T19:22:40",
+                "name": "dev",
+                "path": [
+                    "dev"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 14,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": false,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "character device 3, 1"
+                },
+                "created": null,
+                "display": "/dev/tty0",
+                "kind": "file",
+                "modified": "1985-04-25T19:22:40",
+                "name": "tty0",
+                "path": [
+                    "dev",
+                    "tty0"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 15,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": false,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "block device 1, 0"
+                },
+                "created": null,
+                "display": "/dev/fd0",
+                "kind": "file",
+                "modified": "1985-04-25T19:22:40",
+                "name": "fd0",
+                "path": [
+                    "dev",
+                    "fd0"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 16,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/empty",
+                "kind": "file",
+                "modified": "1985-04-25T19:30:40",
+                "name": "empty",
+                "path": [
+                    "empty"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

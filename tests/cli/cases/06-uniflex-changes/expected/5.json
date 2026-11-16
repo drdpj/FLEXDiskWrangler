@@ -1,0 +1,27 @@
+{
+    "changes": [
+        {
+            "from": "/made/note.txt",
+            "note": null,
+            "op": "rename",
+            "path": "/made/Note",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "mv",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "from": "/made/note.txt",
+        "to": "/made/Note"
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

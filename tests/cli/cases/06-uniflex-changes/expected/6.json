@@ -1,0 +1,27 @@
+{
+    "changes": [
+        {
+            "from": "/readme",
+            "note": null,
+            "op": "rename",
+            "path": "/made/readme",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "mv",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "from": "/readme",
+        "to": "/made/readme"
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

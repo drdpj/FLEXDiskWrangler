@@ -1,0 +1,31 @@
+{
+    "changes": [
+        {
+            "from": "host/note.txt",
+            "note": null,
+            "op": "replace",
+            "path": "/made/note.txt",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "put",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "added": 0,
+        "dirs": 0,
+        "renamed": [
+        ],
+        "replaced": 1,
+        "skipped": 0
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

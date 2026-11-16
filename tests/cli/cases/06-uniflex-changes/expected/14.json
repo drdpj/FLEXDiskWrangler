@@ -1,0 +1,27 @@
+{
+    "changes": [
+        {
+            "from": null,
+            "note": "NEWPACK",
+            "op": "title",
+            "path": "",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "title",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "key": "label",
+        "title": "NEWPACK"
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

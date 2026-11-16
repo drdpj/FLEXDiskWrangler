@@ -1,0 +1,27 @@
+{
+    "changes": [
+        {
+            "from": "/src/made",
+            "note": null,
+            "op": "rename",
+            "path": "/done",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "mv",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "from": "/src/made",
+        "to": "/done"
+    },
+    "saved": true,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}
