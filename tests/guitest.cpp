@@ -23,6 +23,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -63,6 +64,13 @@ static QMenu *menu(MainWindow *w, const QString &title) {
 static QTreeWidgetItem *childNamed(QTreeWidgetItem *p, const QString &name) {
     for (int i = 0; p && i < p->childCount(); ++i) if (p->child(i)->text(0) == name) return p->child(i);
     return nullptr;
+}
+
+// The view menu's entries: one "Text" each, never FLEX's and UniFLEX's both
+static QStringList viewMenu(QWidget *viewer) {
+    QStringList l;
+    if (QComboBox *c = viewer ? viewer->findChild<QComboBox *>() : nullptr) for (int i = 0; i < c->count(); ++i) l << c->itemText(i);
+    return l;
 }
 
 static QAction *menuAction(MainWindow *w, const QString &menuTitle, const QString &text) {
@@ -130,6 +138,7 @@ int main(int argc, char **argv) {
     w->viewSelected();
     ViewerDialog *v = w->findChild<ViewerDialog *>();
     CHECK(v && v->viewId() == "flextext" && v->shownText().startsWith("* A FLEX text file\n        LDA     #$41"), "FLEX text, spaces expanded: " + (v ? v->viewId() : QString("no dialog")));
+    CHECK(viewMenu(v).count("Text") == 1, "one Text in the view menu: " + viewMenu(v).join(", "));
     if (v) v->close();
 
     printf("Extract\n");
@@ -272,6 +281,7 @@ int main(int argc, char **argv) {
         ViewerDialog *uv = w6->findChild<ViewerDialog *>();
         CHECK(uv && uv->viewId() == "uniflextext" && uv->shownText() == "UniFLEX test disc\n\tindented with a TAB\nlast line\n",
               "UniFLEX text: CR lines, the TAB kept: " + (uv ? uv->viewId() + " " + uv->shownText().left(40) : QString("no dialog")));
+        CHECK(viewMenu(uv).count("Text") == 1, "one Text in the view menu: " + viewMenu(uv).join(", "));
         if (uv) uv->close();
     }
     QTemporaryDir uout;

@@ -71,18 +71,21 @@ public:
     }
 };
 
-const dw::ViewerRegistry &flexViewers() {
-    static dw::ViewerRegistry reg = [] {
+// One registry per filesystem, each with its own Text in place of the core's plain one: the View As menu lists every
+// view a registry has, so FLEX's and UniFLEX's text views must never be in the same one.
+const dw::ViewerRegistry &viewersFor(const QString &fs) {
+    auto make = [](std::shared_ptr<dw::FileViewer> text) {
         dw::ViewerRegistry r;
         dw::addDefaultViewers(r);
-        r.remove("plain");                      // FLEX's own Text replaces the core's
-        r.add(std::make_shared<FlexTextViewer>());
-        r.add(std::make_shared<UniFlexTextViewer>());
+        r.remove("plain");
+        r.add(text);
         return r;
-    }();
-    return reg;
+    };
+    static const dw::ViewerRegistry flex = make(std::make_shared<FlexTextViewer>());
+    static const dw::ViewerRegistry uniflex = make(std::make_shared<UniFlexTextViewer>());
+    return fs == "uniflex" ? uniflex : flex;
 }
 } // namespace
 
 ViewerDialog::ViewerDialog(const QString &title, const QByteArray &data, QWidget *parent, const QString &fs)
-    : dw::ViewerDialog(flexViewers(), title, data, parent, QVariantMap{{"fs", fs}}) {}
+    : dw::ViewerDialog(viewersFor(fs), title, data, parent, QVariantMap{{"fs", fs}}) {}
