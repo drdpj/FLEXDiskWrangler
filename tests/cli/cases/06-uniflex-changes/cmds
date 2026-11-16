@@ -1,0 +1,20 @@
+# a UniFLEX disc changed as UniFLEX changes it (series uniflex-2), then what is refused: a name that exists, a
+# directory moved into itself, a directory without -r, /.badblocks, any change to a damaged disc
+$TOOL mkdir img.dsk /made --json
+$TOOL put img.dsk host/note.txt /made --json
+$TOOL put img.dsk host/note.txt /made --json
+$TOOL put img.dsk host/note.txt /made --replace --json
+$TOOL mv img.dsk /made/note.txt /made/Note --json
+$TOOL mv img.dsk /readme /made/readme --json
+$TOOL mv img.dsk /made /src/made --json
+$TOOL mv img.dsk /src/made /src/made/inner --json
+$TOOL mv img.dsk /src/made /done --json
+$TOOL attr img.dsk /done/Note --set othersWrite=true --set owner=7 --json
+$TOOL rm img.dsk /src --json
+$TOOL rm img.dsk /src -r --json
+$TOOL rm img.dsk /.badblocks --json
+$TOOL title img.dsk NEWPACK --json
+$TOOL ls img.dsk -R --json
+$TOOL check img.dsk --json
+$TOOL info img.dsk --json
+$TOOL put img-bad.dsk host/note.txt / --json

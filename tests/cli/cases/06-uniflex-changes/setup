@@ -1,0 +1,2 @@
+python3 -I "$TESTS/uniflex_check.py" make syn
+cp syn/uf-basic.dsk img.dsk; cp syn/uf-bad-map.dsk img-bad.dsk

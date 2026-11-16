@@ -21,6 +21,8 @@
 
 #include <diskwrangler/app/clock.h>
 
+#include "uniflexwrite.h"
+
 using dw::fs::AttrSpec;
 using dw::fs::Entry;
 using dw::fs::Path;
@@ -293,7 +295,7 @@ bool OpenedDisc::attach(const UniFlex::ProbeResult &r, QString *err) {
     m_ufs = std::move(fs);
     m_checkOk = m_ufs->check().ok();
     m_exact = r.exact;
-    m_disc.addMount({"UniFLEX", std::make_shared<UniFlex::UniFlexVolume>(m_ufs.get()), true, UniFlex::UniFlexVolume::ReadOnlyText, "uniflex"});
+    m_disc.addMount({"UniFLEX", std::make_shared<UniFlex::UniFlexVolume>(m_ufs.get()), false, QString(), "uniflex"});
     return true;
 }
 
@@ -316,8 +318,8 @@ const char *const OpenedDisc::GeometryText = "the image file's size doesn't matc
 
 QString OpenedDisc::readOnlyWhy(int mount) const {
     if (m_disc.mounts().isEmpty()) return "no disc";
-    if (m_ufs) return UniFlex::UniFlexVolume::ReadOnlyText;
     if (!m_checkOk) return "the disc has errors (Tools > Check disc)";
+    if (m_ufs) return m_ufs->shortImage() ? "the image file is shorter than the UniFLEX volume in its System Information Record" : QString();
     if (!m_exact) return GeometryText;
     const dw::fs::Disc::Mount m = m_disc.mounts().value(mount);
     return m.readOnly ? m.readOnlyWhy : QString();
@@ -329,6 +331,8 @@ bool OpenedDisc::checkWritten(dw::device::Container &written, QString *err) cons
         UniFlex::Fs f;
         QString e;
         if (!f.attach(dw::device::Linear(&written, dw::device::SideOrder(), m_ufs->linear().size()), &e)) { *err = "the saved copy can't be read back: " + e; return false; }
+        const dw::fs::Report r = f.check();
+        if (!r.ok()) { *err = "the saved copy is not consistent:\n\n" + r.errors.mid(0, 10).join("\n"); return false; }
         if (f.nodes().size() != m_ufs->nodes().size()) { *err = "the saved copy does not hold the same files"; return false; }
         return true;
     }
@@ -343,9 +347,8 @@ bool OpenedDisc::checkWritten(dw::device::Container &written, QString *err) cons
 }
 
 bool OpenedDisc::save(bool backup, QString *err) {
-    if (m_ufs) { *err = UniFlex::UniFlexVolume::ReadOnlyText; return false; }
-    if (m_disk) {
-        const dw::fs::Report r = m_disk->check();
+    if (m_disk || m_ufs) {
+        const dw::fs::Report r = m_disk ? m_disk->check() : m_ufs->check();
         if (!r.ok()) { *err = "the disc would not be consistent.\n\n" + r.errors.mid(0, 10).join("\n"); return false; }
     }
     const QFileInfo fi(m_img.path());
@@ -363,7 +366,7 @@ bool OpenedDisc::save(bool backup, QString *err) {
 
 bool OpenedDisc::saveAs(const QString &path, dw::device::Kind kind, QString *err) {
     if (kind != dw::device::Kind::Raw) { *err = "FLEX and UniFLEX discs are saved as raw images (.dsk) so far."; return false; }
-    const bool ok = m_ufs ? true : !m_disk || m_disk->check().ok();
+    const bool ok = m_ufs ? m_ufs->check().ok() : !m_disk || m_disk->check().ok();
     auto verify = [this, ok](dw::device::Container &written, QString *e) { return !ok || checkWritten(written, e); };
     if (!m_img.saveAs(path, kind, err, verify)) return false;
     noteFileState();
@@ -431,6 +434,41 @@ QVector<dw::fs::Preset> presets() {
         p.extra["track0"] = s.track0;
         out << p;
     }
+    // UniFLEX: the 8" floppies TSC's formatter makes (formatfd's FD-SS, FD-SD, FD-DS, FD-DD: 77 cylinders, 8 blocks of
+    // 512 a side single density, 16 double), laid out as it lays them out, with no swap space and no bootstrap.
+    struct UShape { int heads, sectors; quint8 density, sides; const char *id, *what, *seen; };
+    const UShape ushapes[] = {
+        {1, 8, 0, 0, "uniflex-ss-sd", "8\" single-sided, single density", "The shape of the sample sssd8inch"},
+        {1, 16, 1, 0, "uniflex-ss-dd", "8\" single-sided, double density", "The shape of the sample ssdd8inch"},
+        {2, 8, 0, 1, "uniflex-ds-sd", "8\" double-sided, single density", "The shape of the sample dssd8inch"},
+        {2, 16, 1, 1, "uniflex-ds-dd", "8\" double-sided, double density", "The shape of the sample dsdd8inch (and, with swap space, fd0)"},
+    };
+    for (const UShape &u : ushapes) {
+        dw::fs::Preset p;
+        p.id = u.id;
+        const qint64 blocks = qint64(77) * u.heads * u.sectors;
+        p.name = QString("UniFLEX, %1 blocks (%2, %3K)").arg(blocks).arg(u.what).arg(blocks / 2);
+        p.fsId = "uniflex";
+        p.source = "flex";
+        p.cylinders = 77;
+        p.heads = u.heads;
+        p.sectors = u.sectors;
+        p.sectorSize = UniFlex::BlockSize;
+        p.bytes = quint64(blocks * UniFlex::BlockSize);
+        p.containers = QStringList{"raw"};
+        p.suffix = "dsk";
+        p.doubleSided = u.heads == 2;
+        p.titleWhat = "Pack name";
+        p.titleMax = UniFlex::NameLength;
+        p.notes = QString("%1, laid out as TSC's formatter lays a disc out: %2 blocks of fdns, no swap space, no bootstrap.")
+                      .arg(u.seen).arg(blocks / 33);
+        p.extra["tracks"] = 77;
+        p.extra["sectors"] = u.heads * u.sectors;              // a cylinder's blocks, as a FLEX preset counts its track
+        p.extra["track0"] = u.heads * u.sectors;
+        p.extra["density"] = u.density;
+        p.extra["sides"] = u.sides;
+        out << p;
+    }
     return out;
 }
 
@@ -453,8 +491,41 @@ bool volumeNameBytes(const QString &name, QByteArray *out, QString *err) {
     return true;
 }
 
+bool uniflexPackBytes(const QString &name, QByteArray *out, QString *err) {
+    if (name.size() > UniFlex::NameLength) { *err = QString("a UniFLEX pack name has up to %1 characters").arg(UniFlex::NameLength); return false; }
+    for (QChar c : name)
+        if (c.unicode() == 0 || c.unicode() > 0xFF) { *err = QString("'%1' can't be in a UniFLEX pack name").arg(c); return false; }
+    *out = name.toLatin1();
+    return true;
+}
+
+// A new UniFLEX disc (UniFlex::formatDisc), timed by the core's clock.
+static bool createUniflex(const QString &path, const dw::fs::Preset &p, const QString &name, int number, QString *err) {
+    QByteArray pack;
+    if (!uniflexPackBytes(name, &pack, err)) return false;
+    if (number < 0 || number > 65535) { *err = "a UniFLEX file system number is 0 to 65535"; return false; }
+    const qint64 secs = dw::now().toSecsSinceEpoch() - 315532800;    // seconds since 1980 GMT
+    const QByteArray bytes = UniFlex::formatDisc(p.cylinders, p.heads, p.sectors, quint8(p.extra.value("density").toInt()),
+                                                 quint8(p.extra.value("sides").toInt()), QByteArray(), pack, number,
+                                                 secs < 0 ? 0 : quint32(secs));
+    dw::device::RawLayout l;
+    l.seclen = UniFlex::BlockSize;
+    l.sectrk = 1;
+    l.cyls = int(bytes.size() / UniFlex::BlockSize);
+    l.heads = 1;
+    l.firstId = 1;
+    dw::device::Container img;
+    img.createBlank(dw::device::Kind::Raw, l, QString("Made by FLEX Disk Wrangler, %1").arg(p.id));
+    dw::device::Linear lin(&img, dw::device::SideOrder(), l.bytes());
+    return lin.write(0, bytes, err) && img.saveAs(path, dw::device::Kind::Raw, err);
+}
+
 bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
                  const QByteArray &boot, QString *err) {
+    if (p.fsId == "uniflex") {
+        if (!boot.isEmpty()) { *err = "a FLEX boot loader can't go on a UniFLEX disc"; return false; }
+        return createUniflex(path, p, name, number, err);
+    }
     const int tracks = p.extra.value("tracks").toInt(), sectors = p.extra.value("sectors").toInt();
     const int track0 = p.extra.value("track0", sectors).toInt();
     QByteArray nameBytes;

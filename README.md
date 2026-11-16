@@ -10,8 +10,9 @@ from them, including the other Disk Wranglers
 ([Acorn](https://github.com/drdpj/AcornDiskWrangler), [CP/M](https://github.com/drdpj/CPMDiskWrangler)) through the
 [retro-files](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/retro-files-format.md) format.
 
-It also reads discs of **UniFLEX**, TSC's multi-user Unix-like system for the same 6809 machines: their directory
-trees, files, permissions and owners, and a check of the whole file system (see below).
+It also works with discs of **UniFLEX**, TSC's multi-user Unix-like system for the same 6809 machines: their
+directory trees, files, permissions and owners, a check of the whole file system, and changes made the way UniFLEX
+makes them (see below).
 
 **Changes are made the way FLEX makes them.** Where a new file's entry goes, which sectors it takes, how the directory
 grows, what deleting leaves, the sector map of a random-access file, the System Information Record after each change,
@@ -43,7 +44,7 @@ Help > About shows the version; Help > Licences shows the licences of the progra
 | Image | |
 |---|---|
 | Raw FLEX image (`.dsk`, as most FLEX emulators write it), in whatever geometry the disc's System Information Record gives (tried on discs of 20 to 77 tracks and 10 to 36 sectors a track) | read and write |
-| Raw UniFLEX image (`.dsk`: 8-inch floppies and Winchester hard discs, as emulators write them) | read only |
+| Raw UniFLEX image (`.dsk`: 8-inch floppies and Winchester hard discs, as emulators write them) | read and write |
 | OS-9 discs | recognised and named, not opened |
 
 A disc with a broken chain opens read-only with the fault named (Tools > Check disc); a file whose chain is broken is
@@ -74,9 +75,20 @@ and Copy give the files exactly as stored, names as they are (UniFLEX names are 
 Properties and Disc information show what the disc records; Tools > Check disc checks the whole file system: every
 file's blocks, the directories, link counts, the free list and the free fdns.
 
-UniFLEX discs are **read-only** in this version: nothing on them can be changed. What a UniFLEX disc holds was read
-from TSC's own kernel and formatter sources ([docs/uniflex-format.md](docs/uniflex-format.md)), kept with the disc
-images by the **FLEX UniFLEX User Group** and **The Missing 6809 UniFLEX Archive**, whose work made this possible.
+**Changing a UniFLEX disc** works as on a FLEX disc: Add files, drops and Paste (into the folder selected), **New
+directory**, Rename, Properties (the name, the access bits and the owner), Delete (a folder with everything in it),
+Volume name (the pack name, file system name and number) and New disc image (TSC's four 8-inch formats). Every change
+is made **the way UniFLEX's own kernel makes it**: which blocks and file descriptor nodes are taken and freed, in what
+order, where a new name goes in a directory, how the free lists and the System Information Record end up. This was read
+from TSC's kernel, utility and formatter sources and then checked against UniFLEX 3.14 itself, running in an emulator,
+byte for byte. A file brought in gets the time of the change, as UniFLEX's `copy` gives it, and keeps the access and
+owner it brings from another UniFLEX disc. Folders can be renamed and moved (UniFLEX's own tools do neither; the
+program does it with the kernel's own steps, its `..` rewritten, so the disc stays as UniFLEX expects). A disc with errors (several of the surviving images were copied from running systems and are inconsistent)
+opens read-only, with the faults named.
+
+What a UniFLEX disc holds was read from TSC's own sources ([docs/uniflex-format.md](docs/uniflex-format.md)), kept
+with the disc images by the **FLEX UniFLEX User Group** and **The Missing 6809 UniFLEX Archive**, whose work made this
+possible.
 
 ## Files on your computer
 Files come out exactly as they are on the disc, so that copying a file out and back in gives the same file: a FLEX
@@ -95,6 +107,8 @@ and the file gets the date from the directory.
     flexdw rm DISC.DSK OLD.TXT                # delete one
     flexdw new NEW.DSK --format=flex-40x10 --title=WORK     # a new disc (flexdw new --list: the shapes)
     flexdw ls UNIFLEX.DSK -R                  # a UniFLEX disc's whole tree
+    flexdw mkdir UNIFLEX.DSK /work            # a UniFLEX directory
+    flexdw new NEW.DSK --format=uniflex-ds-dd --title=pack  # a new UniFLEX disc
 
 Add `--json` for output a program can read. The commands are those of the other Disk Wranglers' console programs
 ([cli.md](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/cli.md)).

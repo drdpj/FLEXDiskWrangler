@@ -17,6 +17,10 @@
  */
 #include "uniflexvolume.h"
 
+#include <diskwrangler/app/clock.h>
+
+#include "uniflexwrite.h"
+
 using dw::fs::AttrSpec;
 using dw::fs::Entry;
 using dw::fs::Path;
@@ -48,12 +52,52 @@ QString NameRules::fromHost(const QString &hostName, dw::fs::NodeKind) const {
 
 // ------------------------------------------------------------------------------------------------ the volume
 
-const char *const UniFlexVolume::ReadOnlyText = "UniFLEX discs are read-only in this version of FLEX Disk Wrangler";
+
+// The time of a change as UniFLEX keeps it: seconds since 1980 GMT (the core's clock, so the tests can fix it).
+static quint32 nowSeconds() {
+    const qint64 s = dw::now().toSecsSinceEpoch() - 315532800;    // 1 January 1980, 00:00 GMT
+    return s < 0 ? 0 : quint32(qMin<qint64>(s, 0xFFFFFFFF));
+}
+
+static BytePath bytesOf(const Path &p) {
+    BytePath b;
+    for (const QString &s : p.parts) b << s.toLatin1();
+    return b;
+}
+
+// The seven access bits from attribute values; those not given come from base.
+static quint8 accessOf(const dw::fs::AttrValues &a, quint8 base) {
+    static const struct { const char *key; quint8 bit; } bits[] = {
+        {"ownerRead", OwnerRead}, {"ownerWrite", OwnerWrite}, {"ownerExecute", OwnerExecute}, {"othersRead", OthersRead},
+        {"othersWrite", OthersWrite}, {"othersExecute", OthersExecute}, {"setUserId", SetUserId}};
+    quint8 r = base;
+    for (const auto &b : bits)
+        if (a.contains(b.key)) r = a.value(b.key).toBool() ? quint8(r | b.bit) : quint8(r & ~b.bit);
+    return r;
+}
+
+static bool ownerOf(const dw::fs::AttrValues &a, int base, int *out, QString *err) {
+    *out = base;
+    if (!a.contains("owner")) return true;
+    bool ok = false;
+    const int o = a.value("owner").toString().trimmed().toInt(&ok);
+    if (!ok || o < 0 || o > 65535) { *err = "a UniFLEX owner is a user id, 0 to 65535"; return false; }
+    *out = o;
+    return true;
+}
+
+// A name for the disc: the volume's rules, then Latin-1 bytes.
+static bool nameBytes(const NameRules &rules, const QString &name, dw::fs::NodeKind kind, QByteArray *out, QString *err) {
+    if (!rules.valid(name, kind, err)) return false;
+    *out = name.toLatin1();
+    return true;
+}
 
 dw::fs::Caps UniFlexVolume::caps() const {
     dw::fs::Caps c;
     c.dirs = true;
-    c.rename = false;
+    c.rename = true;
+    c.renameAcrossDirs = true;           // files only: a directory stays in its directory (uniflexwrite.h)
     c.title = true;
     c.dates = true;
     c.settableDates = false;
@@ -82,9 +126,9 @@ QVector<AttrSpec> UniFlexVolume::fileAttrs() const {
 
 QVector<AttrSpec> UniFlexVolume::volumeAttrs() const {
     AttrSpec label, fsName, number;
-    label.key = "label"; label.label = "Pack name"; label.type = AttrSpec::Text; label.editable = false;
-    fsName.key = "fsName"; fsName.label = "File system name"; fsName.type = AttrSpec::Text; fsName.editable = false;
-    number.key = "number"; number.label = "File system number"; number.type = AttrSpec::Int; number.editable = false;
+    label.key = "label"; label.label = "Pack name"; label.type = AttrSpec::Text; label.sample = "MMMMMMMMMMMMMM";
+    fsName.key = "fsName"; fsName.label = "File system name"; fsName.type = AttrSpec::Text; fsName.sample = "MMMMMMMMMMMMMM";
+    number.key = "number"; number.label = "File system number"; number.type = AttrSpec::Int; number.sample = "65535";
     return {label, fsName, number};
 }
 
@@ -150,15 +194,82 @@ bool UniFlexVolume::read(const Path &file, QByteArray *out, QString *err) const 
     return at >= 0 && m_fs->readFile(m_fs->nodes()[at], out, err);
 }
 
-bool UniFlexVolume::write(const Path &, const QString &, const QByteArray &, const dw::fs::AttrValues &, const QDateTime &, bool, QString *err) {
-    *err = ReadOnlyText;
-    return false;
+bool UniFlexVolume::write(const Path &dir, const QString &name, const QByteArray &data, const dw::fs::AttrValues &attrs,
+                          const QDateTime &, bool replace, QString *err) {
+    QByteArray n;
+    if (!nameBytes(m_names, name, dw::fs::NodeKind::File, &n, err)) return false;
+    int owner;
+    if (!ownerOf(attrs, 0, &owner, err)) return false;
+    // The time is the time of the change, as UniFLEX's copy gives it; the access and owner come with the file.
+    Writer w(m_fs, nowSeconds());
+    return w.writeFile(bytesOf(dir), n, data, accessOf(attrs, DefaultFileAccess), owner, replace, err);
 }
-bool UniFlexVolume::mkdir(const Path &, const QString &, QString *err) { *err = ReadOnlyText; return false; }
-bool UniFlexVolume::remove(const Path &, QString *err) { *err = ReadOnlyText; return false; }
-bool UniFlexVolume::rename(const Path &, const Path &, QString *err) { *err = ReadOnlyText; return false; }
-bool UniFlexVolume::setAttrs(const Path &, const dw::fs::AttrValues &, QString *err) { *err = ReadOnlyText; return false; }
-bool UniFlexVolume::setVolumeAttrs(const dw::fs::AttrValues &, QString *err) { *err = ReadOnlyText; return false; }
+
+bool UniFlexVolume::mkdir(const Path &dir, const QString &name, QString *err) {
+    QByteArray n;
+    if (!nameBytes(m_names, name, dw::fs::NodeKind::Dir, &n, err)) return false;
+    Writer w(m_fs, nowSeconds());
+    return w.makeDir(bytesOf(dir), n, err);
+}
+
+bool UniFlexVolume::remove(const Path &node, QString *err) {
+    Writer w(m_fs, nowSeconds());
+    return w.remove(bytesOf(node), err);
+}
+
+bool UniFlexVolume::rename(const Path &from, const Path &to, QString *err) {
+    QByteArray n;
+    if (!nameBytes(m_names, to.name(), dw::fs::NodeKind::File, &n, err)) return false;
+    Writer w(m_fs, nowSeconds());
+    return w.rename(bytesOf(from), bytesOf(to.parent()), n, err);
+}
+
+bool UniFlexVolume::setAttrs(const Path &p, const dw::fs::AttrValues &a, QString *err) {
+    const int at = node(p, err);
+    if (at < 0) return false;
+    const Fdn *f = m_fs->fdnOf(m_fs->nodes()[at]);
+    if (!f) { *err = m_fs->nodes()[at].problem; return false; }
+    for (const char *k : {"links", "fdn", "type"})
+        if (a.contains(k) && a.value(k) != entryOf(at).attrs.value(k)) { *err = QString("the %1 can't be set").arg(k); return false; }
+    const quint8 access = accessOf(a, f->access & 0x7F);
+    int owner;
+    if (!ownerOf(a, f->owner, &owner, err)) return false;
+    const int oldOwner = f->owner;
+    const quint8 oldAccess = f->access & 0x7F;
+    if (access != oldAccess) {
+        Writer w(m_fs, nowSeconds());
+        if (!w.setAccess(bytesOf(p), access, err)) return false;
+    }
+    if (owner != oldOwner) {
+        Writer w(m_fs, nowSeconds());
+        if (!w.setOwner(bytesOf(p), owner, err)) return false;
+    }
+    return true;
+}
+
+bool UniFlexVolume::setVolumeAttrs(const dw::fs::AttrValues &a, QString *err) {
+    const Sir &s = m_fs->sir();
+    QByteArray fsName = s.fsName.left(s.fsName.indexOf('\0') < 0 ? NameLength : s.fsName.indexOf('\0'));
+    QByteArray pack = s.packName.left(s.packName.indexOf('\0') < 0 ? NameLength : s.packName.indexOf('\0'));
+    int number = s.number;
+    auto text = [&](const char *key, const char *what, QByteArray *out) {
+        if (!a.contains(key)) return true;
+        const QString t = a.value(key).toString();
+        if (t.size() > NameLength) { *err = QString("a UniFLEX %1 has up to %2 characters").arg(what).arg(NameLength); return false; }
+        for (QChar c : t)
+            if (c.unicode() == 0 || c.unicode() > 0xFF) { *err = QString("'%1' can't be in a UniFLEX %2").arg(c).arg(what); return false; }
+        *out = t.toLatin1();
+        return true;
+    };
+    if (!text("label", "pack name", &pack) || !text("fsName", "file system name", &fsName)) return false;
+    if (a.contains("number")) {
+        bool ok = false;
+        number = a.value("number").toString().trimmed().toInt(&ok);
+        if (!ok || number < 0 || number > 65535) { *err = "a UniFLEX file system number is 0 to 65535"; return false; }
+    }
+    Writer w(m_fs, nowSeconds());
+    return w.setNames(fsName, pack, number, err);
+}
 
 // ------------------------------------------------------------------------------------------------ detection
 

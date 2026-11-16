@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-// uniflexvolume.h - a UniFLEX disc as a dw::fs::Volume (UniFlexVolume, read-only in series uniflex-1) and its probe
+// uniflexvolume.h - a UniFLEX disc as a dw::fs::Volume (UniFlexVolume: read in series uniflex-1, written in uniflex-2) and its probe
 // (UniFlexProbe). QtCore only: the console program uses it too.
 #pragma once
 
@@ -36,13 +36,13 @@ public:
 
 // The tree from the root. Attributes: the seven access bits (retro-files family "uniflex", docs/retro-files-uniflex.md)
 // and the owner's user id travel with a file; the type (a device's numbers), links and fdn number are shown. The
-// date is the fdn's time of last change. Volume attributes: the pack name, the file system name and number. Every
-// change is refused: UniFLEX discs are read-only in this version.
+// date is the fdn's time of last change. Volume attributes: the pack name, the file system name and number. Changes
+// are made as UniFLEX makes them (uniflexwrite.h); a file brought in gets the time of the change, as UniFLEX's copy
+// gives it, and keeps the access and owner it brings.
 class UniFlexVolume : public dw::fs::Volume {
 public:
     explicit UniFlexVolume(Fs *fs) : m_fs(fs) {}
     Fs *fs() const { return m_fs; }
-    static const char *const ReadOnlyText;       // why nothing can be changed
 
     QString fsId() const override { return "uniflex"; }
     dw::fs::Caps caps() const override;

@@ -141,7 +141,9 @@ dw::ui::DiscWindow::ActionSpec MainWindow::actionSpec(Act a) const {
     case Act::Rename: return {"Re&name...", {QKeySequence("F2")}, "Rename", QString()};
     case Act::Properties: return {"P&roperties...", {QKeySequence("Alt+Return")}, "Properties", QString()};
     case Act::Delete: return {"&Delete", dw::deleteKeys(), "Delete", QString()};
-    default: return {};                // no Add folder or New directory: FLEX has no folders
+    case Act::NewDirectory: return {"New &directory...", {QKeySequence("F7")}, "New dir",
+                                    "New directory - on UniFLEX discs; a FLEX disc has one directory"};
+    default: return {};                // no Add folder: FLEX has no folders, and a UniFLEX folder is made, then filled
     }
 }
 
@@ -167,7 +169,7 @@ dw::ui::VolumePane *MainWindow::createPane(const QString &group) {
 }
 
 QList<QAction *> MainWindow::contextActions() const {     // the Edit menu's order
-    return {action(Act::View), action(Act::Extract), nullptr, action(Act::AddFiles), nullptr, action(Act::Copy), action(Act::Paste),
+    return {action(Act::View), action(Act::Extract), nullptr, action(Act::AddFiles), action(Act::NewDirectory), nullptr, action(Act::Copy), action(Act::Paste),
             nullptr, action(Act::Rename), action(Act::Properties), action(Act::Delete)};
 }
 
@@ -188,7 +190,7 @@ MainWindow::MainWindow(QWidget *parent) : DiscWindow(parent) {
     QMenu *edit = menuBar()->addMenu("&Edit");
     edit->addActions({action(Act::View), action(Act::Extract)});
     edit->addSeparator();
-    edit->addAction(action(Act::AddFiles));
+    edit->addActions({action(Act::AddFiles), action(Act::NewDirectory)});
     edit->addSeparator();
     edit->addActions({action(Act::Copy), action(Act::Paste)});
     edit->addSeparator();
@@ -215,7 +217,7 @@ MainWindow::MainWindow(QWidget *parent) : DiscWindow(parent) {
     help->addAction("About &Qt...", qApp, &QApplication::aboutQt);
     help->addAction("&Licences...", this, [this] { showLicences(this); });
 
-    ButtonBar::makeButtonBar(addToolBar("Main"), {action(Act::View), action(Act::Extract), action(Act::AddFiles), action(Act::Rename),
+    ButtonBar::makeButtonBar(addToolBar("Main"), {action(Act::View), action(Act::Extract), action(Act::AddFiles), action(Act::NewDirectory), action(Act::Rename),
                                                   action(Act::Properties), action(Act::Delete)});
     for (dw::ui::VolumePane *p : panes()) {
         connect(p, &FlexPane::dragOutFinished, this, [this](int files, int, const QStringList &errors) {
@@ -343,7 +345,8 @@ void MainWindow::updateActions() {
     if (!m_actCheck) return;                            // the constructor hasn't made them all yet
     m_actCheck->setEnabled(hasDisc());
     m_actInfo->setEnabled(hasDisc());
-    m_actLabel->setEnabled(hasFlex() && writable(0));
+    m_actLabel->setEnabled(hasDisc() && writable(0));
+    if (QAction *nd = action(Act::NewDirectory)) nd->setEnabled(hasUniflex() && writable(0));
     m_actBoot->setEnabled(hasFlex() && writable(0));
     const QVector<dw::ui::PaneRow> rows = selectedRows();
     m_actLink->setEnabled(hasFlex() && writable(0) && rows.size() == 1 && rows.first().isFile());
@@ -361,9 +364,10 @@ QStringList MainWindow::statusVariants() const {
                                   .arg(fs->dirCount() + 1).arg(fs->dirCount() == 0 ? "y" : "ies");
         const QString fr = dw::fmtBytes(s.freeBlocks * UniFlex::BlockSize, dw::SmallSizes::AsBytes);
         const QString shape = QString("UniFLEX, %1 blocks").arg(s.volumeBlocks());
-        const QString tail = m_doc.checkOk() ? "  -  read-only" : "  -  read-only; the disc has errors (Tools > Check disc)";
-        return {QString("%1 - %2, %3 free").arg(shape, files, fr) + tail, QString("%1 - %2, %3 free").arg(shape, files, fr) + "  -  read-only",
-                QString("%1, %2 free").arg(files, fr) + "  -  read-only"};
+        QString longTail, shortTail;
+        if (!writable(0)) { longTail = "  -  read-only: " + readOnlyReason(0); shortTail = "  -  read-only"; }
+        return {QString("%1 - %2, %3 free").arg(shape, files, fr) + longTail, QString("%1 - %2, %3 free").arg(shape, files, fr) + shortTail,
+                QString("%1, %2 free").arg(files, fr) + shortTail};
     }
     const Flex::Disk &d = *m_doc.disk();
     const int n = d.files().size();
@@ -411,7 +415,7 @@ void MainWindow::copySelected() {
 bool MainWindow::propertiesEditor(const QVector<Item> &items, PropertiesEdit *edit) {
     if (!hasDisc() || items.isEmpty()) return false;
     if (autoAnswer) { showMessage("properties shown"); return false; }
-    if (hasUniflex()) { uniflexProperties(items); return false; }
+    if (hasUniflex()) return uniflexProperties(items, edit);
     QVector<Flex::File> files;
     for (const Item &i : items) {
         const int k = m_doc.disk()->indexOf(i.path.name());
@@ -479,7 +483,9 @@ bool MainWindow::propertiesEditor(const QVector<Item> &items, PropertiesEdit *ed
 
 // Edit > Volume name: the name (up to 8 characters; the 3 bytes after it, a formatter's tag, are kept) and the number.
 bool MainWindow::volumeEditor(int, const QString &, VolumeEdit *edit) {
-    if (!hasFlex() || autoAnswer) return false;
+    if (autoAnswer) return false;
+    if (hasUniflex()) return uniflexVolume(edit);
+    if (!hasFlex()) return false;
     const Flex::Sir &s = m_doc.disk()->sir();
     QDialog d(this);
     d.setWindowTitle("Volume name");
@@ -591,10 +597,26 @@ void MainWindow::newImageDialog() {
     fl->addRow("Volume name", name);
     fl->addRow("Volume number", number);
     fl->addRow("Boot loader from", bootRow);
-    auto *note = new QLabel("Laid out as FLEX's NEWDISK lays a disc out. FLEX's boot loader is TSC's code, so it is copied "
-                            "from a FLEX disc you have (track 0, sectors 1 and 2); without one the disc works under FLEX but "
-                            "doesn't start it. Link the loader once FLEX.SYS is on the disc (Tools > Link boot loader to file).");
+    auto *note = new QLabel;
     note->setWordWrap(true);
+    // the fields follow the shape: a FLEX disc's volume name and number and boot loader, a UniFLEX disc's pack name and
+    // file system number (and no loader: UniFLEX's bootstrap is TSC's code too, and a new disc has none)
+    const auto follow = [=] {
+        const dw::fs::Preset *pr = Flex::findPreset(shape->currentData().toString());
+        const bool uf = pr && pr->fsId == "uniflex";
+        name->setMaxLength(uf ? UniFlex::NameLength : Flex::VolumeNameLength);
+        if (auto *l = qobject_cast<QLabel *>(fl->labelForField(name))) l->setText(uf ? "Pack name" : "Volume name");
+        if (auto *l = qobject_cast<QLabel *>(fl->labelForField(number))) l->setText(uf ? "File system number" : "Volume number");
+        boot->setEnabled(!uf);
+        browse->setEnabled(!uf);
+        note->setText(uf ? "Laid out as TSC's UniFLEX formatter lays a disc out: a 33rd of the disc for fdns, the root and "
+                           "/.badblocks, no swap space. Block 0, where the formatter puts UniFLEX's bootstrap, is left empty."
+                         : "Laid out as FLEX's NEWDISK lays a disc out. FLEX's boot loader is TSC's code, so it is copied "
+                           "from a FLEX disc you have (track 0, sectors 1 and 2); without one the disc works under FLEX but "
+                           "doesn't start it. Link the loader once FLEX.SYS is on the disc (Tools > Link boot loader to file).");
+    };
+    connect(shape, QOverload<int>::of(&QComboBox::currentIndexChanged), &d, follow);
+    follow();
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     auto *lay = new QVBoxLayout(&d);
     lay->addLayout(fl);
@@ -606,13 +628,15 @@ void MainWindow::newImageDialog() {
     const QString id = shape->currentData().toString();
     st.setValue("newPreset", id);
     st.setValue("bootSource", boot->text().trimmed());
-    const QString base = name->text().trimmed().isEmpty() ? QString("flex") : name->text().trimmed().toLower();
+    const dw::fs::Preset *chosen = Flex::findPreset(id);
+    const bool uf = chosen && chosen->fsId == "uniflex";
+    const QString base = name->text().trimmed().isEmpty() ? QString(uf ? "uniflex" : "flex") : name->text().trimmed().toLower();
     const QString p = QFileDialog::getSaveFileName(this, "New disc image", st.value("lastDir").toString() + "/" + base + ".dsk",
-                                                   "Raw FLEX image (" + dw::anyCase("*.dsk *.flx *.img") + ")");
+                                                   (uf ? "Raw UniFLEX image (" : "Raw FLEX image (") + dw::anyCase("*.dsk *.flx *.img") + ")");
     if (p.isEmpty()) return;
     st.setValue("lastDir", QFileInfo(p).absolutePath());
     QString err;
-    if (!newImage(p, id, name->text(), number->value(), boot->text().trimmed(), &err)) message("New disc image", err);
+    if (!newImage(p, id, name->text(), number->value(), uf ? QString() : boot->text().trimmed(), &err)) message("New disc image", err);
 }
 
 bool MainWindow::newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err) {
@@ -623,7 +647,8 @@ bool MainWindow::newImage(const QString &path, const QString &presetId, const QS
     if (!Flex::createBlank(path, *p, name, number, dw::now().date(), boot, err)) return false;
     MainWindow *w = m_doc.isOpen() ? static_cast<MainWindow *>(createWindow()) : this;
     if (!w->openFile(path)) { *err = path + " was made but couldn't be opened"; return false; }
-    w->showMessage(QString("Made %1: %2%3.").arg(QFileInfo(path).fileName(), p->name, boot.isEmpty() ? QString(", no boot loader") : ", with the boot loader of " + QFileInfo(bootSource).fileName()));
+    const QString loader = p->fsId == "uniflex" ? QString() : boot.isEmpty() ? QString(", no boot loader") : ", with the boot loader of " + QFileInfo(bootSource).fileName();
+    w->showMessage(QString("Made %1: %2%3.").arg(QFileInfo(path).fileName(), p->name, loader));
     return true;
 }
 
@@ -631,7 +656,18 @@ bool MainWindow::newImage(const QString &path, const QString &presetId, const QS
 
 // Host files (Add files, a drop, Paste of a file manager's copy), read by the core's one reader with this program's
 // size limit; a folder's files are added flat (FLEX has no folders).
-void MainWindow::importPaths(const QStringList &paths) {
+dw::fs::Path MainWindow::importTarget(QTreeWidgetItem *row) const {
+    if (!hasUniflex()) return dw::fs::Path();
+    if (!row) if (dw::ui::VolumePane *p = const_cast<MainWindow *>(this)->pane("uniflex")) row = p->currentItem();
+    if (!row) return dw::fs::Path();
+    const dw::ui::PaneRow r = dw::ui::VolumePane::rowOf(row);
+    if (!r.valid() || r.root) return dw::fs::Path();
+    return r.isFile() ? r.path.parent() : r.path;
+}
+
+void MainWindow::importPaths(const QStringList &paths) { importPaths(paths, importTarget()); }
+
+void MainWindow::importPaths(const QStringList &paths, const dw::fs::Path &dir) {
     if (!hasDisc()) return;
     if (!writable(0)) { message("Add files", "The disc is read-only: " + readOnlyReason(0)); return; }
     QVector<dw::xfer::HostReadError> errors;
@@ -640,14 +676,14 @@ void MainWindow::importPaths(const QStringList &paths) {
     for (const dw::xfer::HostReadError &e : errors) {
         dw::xfer::ImportError ie;
         ie.kind = dw::xfer::ImportError::Failed;
-        ie.why = e.kind == dw::xfer::HostReadError::TooLarge ? "too large for a FLEX disc"
+        ie.why = e.kind == dw::xfer::HostReadError::TooLarge ? "too large for the disc"
                : e.kind == dw::xfer::HostReadError::NotFound ? "no such file or folder" : "cannot read (" + e.reason + ")";
         ie.message = QFileInfo(e.path).fileName() + ": " + ie.why;
         ie.from = e.path;
         readErrors << ie;
     }
     if (items.isEmpty() && readErrors.isEmpty()) return;
-    importItems(0, dw::fs::Path(), items, {}, readErrors);
+    importItems(0, hasUniflex() ? dir : dw::fs::Path(), items, {}, readErrors);
 }
 
 // Retro-files JSON: dropped from another window or program, or pasted.
@@ -657,7 +693,7 @@ void MainWindow::importJson(const QByteArray &json) {
     QVector<dw::TransferItem> items;
     QString err;
     if (!dw::xfer::readJson(json, &items, &err)) { message("Add files", err); return; }
-    importItems(0, dw::fs::Path(), items);
+    importItems(0, importTarget(), items);
 }
 
 void MainWindow::addFilesDialog() {
@@ -668,9 +704,10 @@ void MainWindow::addFilesDialog() {
     importPaths(p);
 }
 
-void MainWindow::droppedOnDisc(dw::ui::VolumePane *, QTreeWidgetItem *, const QStringList &paths) {
+void MainWindow::droppedOnDisc(dw::ui::VolumePane *, QTreeWidgetItem *target, const QStringList &paths) {
     const QStringList p = paths;
-    QTimer::singleShot(0, this, [this, p] { importPaths(p); });           // no dialogs inside the drop handler
+    const dw::fs::Path dir = importTarget(target);                         // the directory dropped on (UniFLEX)
+    QTimer::singleShot(0, this, [this, p, dir] { importPaths(p, dir); });  // no dialogs inside the drop handler
 }
 
 // Edit > Paste: this program's own copy, retro-files JSON, or a file manager's files.
@@ -678,7 +715,7 @@ void MainWindow::paste() {
     if (!hasDisc()) return;
     if (!writable(0)) { message("Paste", "The disc is read-only: " + readOnlyReason(0)); return; }
     PasteTo to;
-    to.copied = [this](const QVector<dw::TransferItem> &items) { importItems(0, dw::fs::Path(), items); };
+    to.copied = [this](const QVector<dw::TransferItem> &items) { importItems(0, importTarget(), items); };
     to.retroFiles = [this](const QByteArray &json) { importJson(json); };
     to.paths = [this](const QStringList &paths) { importPaths(paths); };
     if (!pasteClipboard(to)) showMessage("Nothing to paste: copy some files first (here, in another window, or in a file manager).");
@@ -690,7 +727,9 @@ void MainWindow::renameSelected() {
     const QVector<Item> items = selectedFiles();
     if (items.size() != 1) return;
     bool ok = false;
-    const QString n = QInputDialog::getText(this, "Rename", QString("New name for %1 (up to 8 characters, a dot, up to 3):").arg(items[0].path.name()),
+    const QString shown = hasUniflex() ? UniFlex::printable(items[0].path.name()) : items[0].path.name();
+    const QString rule = hasUniflex() ? "up to 14 characters, case kept" : "up to 8 characters, a dot, up to 3";
+    const QString n = QInputDialog::getText(this, "Rename", QString("New name for %1 (%2):").arg(shown, rule),
                                             QLineEdit::Normal, items[0].path.name(), &ok);
     if (!ok || n.trimmed().isEmpty()) return;
     QString err;
@@ -701,9 +740,29 @@ bool MainWindow::renameFile(const Item &item, const QString &newName, QString *e
     if (!writable(item.mount)) { *err = "read-only: " + readOnlyReason(item.mount); return false; }
     const bool done = m_doc.disc().transact([&](QString *e) {
         dw::fs::Volume *v = m_doc.disc().volume(item.mount);
-        return v && v->rename(item.path, dw::fs::Path({newName}), e);
+        return v && v->rename(item.path, item.path.parent().child(newName), e);   // in its own directory
     }, err);
     refresh();
+    return done;
+}
+
+void MainWindow::newDirectory() {
+    if (!hasUniflex()) { showMessage("A FLEX disc has one directory."); return; }
+    bool ok = false;
+    const QString n = QInputDialog::getText(this, "New directory", "Name (up to 14 characters, case kept):", QLineEdit::Normal, QString(), &ok);
+    if (!ok || n.trimmed().isEmpty()) return;
+    QString err;
+    if (!makeDirectory(importTarget(), n.trimmed(), &err)) message("New directory", err);
+}
+
+bool MainWindow::makeDirectory(const dw::fs::Path &dir, const QString &name, QString *err) {
+    if (!writable(0)) { *err = "read-only: " + readOnlyReason(0); return false; }
+    const bool done = m_doc.disc().transact([&](QString *e) {
+        dw::fs::Volume *v = m_doc.disc().volume(0);
+        return v && v->mkdir(dir, name, e);
+    }, err);
+    refresh();
+    updateUi();
     return done;
 }
 
@@ -754,7 +813,7 @@ bool MainWindow::linkBootLoader(const Item &item, QString *err) {
     return ok;
 }
 
-// ------------------------------------------------------------------------------------------- UniFLEX discs (read-only)
+// ------------------------------------------------------------------------------------------- UniFLEX discs
 
 void MainWindow::decorateUniflexRow(QTreeWidgetItem *it, const dw::fs::Entry &e) const {
     it->setText(0, UniFlex::printable(e.name));
@@ -774,17 +833,22 @@ void MainWindow::decorateUniflexRow(QTreeWidgetItem *it, const dw::fs::Entry &e)
     }
 }
 
-// Properties of UniFLEX files and directories: what the fdn says, shown only (nothing can be changed yet).
-void MainWindow::uniflexProperties(const QVector<Item> &items) {
+// Properties of UniFLEX files and directories: what the fdn says, and what can be changed: the name (one item), the
+// seven access bits and the owner. The kit applies the changes, each item in its own transaction.
+bool MainWindow::uniflexProperties(const QVector<Item> &items, PropertiesEdit *edit) {
     const UniFlex::Fs &fs = *m_doc.uniflex();
+    struct It { Item item; UniFlex::Fdn f; };
+    QVector<It> its;
     QStringList l;
-    for (const Item &i : items.mid(0, 20)) {
+    for (const Item &i : items) {
         const int n = fs.find(i.path.parts);
         if (n < 0) continue;
         const UniFlex::Node &node = fs.nodes()[n];
         const UniFlex::Fdn *f = fs.fdnOf(node);
-        l << "<h3>/" + UniFlex::printable(i.path.toString()).toHtmlEscaped() + "</h3>";
-        if (!f) { l << "<b>Problem:</b> " + node.problem.toHtmlEscaped(); continue; }
+        if (its.size() < 20) l << "<h3>/" + UniFlex::printable(i.path.toString()).toHtmlEscaped() + "</h3>";
+        if (!f) { if (its.size() < 20) l << "<b>Problem:</b> " + node.problem.toHtmlEscaped(); continue; }
+        its << It{i, *f};
+        if (its.size() > 20) continue;
         l << QString("<b>Type:</b> %1").arg(f->typeText().toHtmlEscaped());
         if (!f->isDir() && !f->isDevice()) {
             QVector<qint64> data, indirect;
@@ -798,27 +862,103 @@ void MainWindow::uniflexProperties(const QVector<Item> &items) {
                                .arg(holes ? QString(" (%1 never written)").arg(holes) : QString())
                          : QString());
         }
-        l << QString("<b>Access:</b> %1 (owner %2, others %3%4)").arg(f->accessText(), f->accessText().mid(0, 3), f->accessText().mid(3, 3))
-                 .arg(f->access & UniFlex::SetUserId ? "; runs with its owner's user id" : "");
-        l << QString("<b>Owner:</b> user %1").arg(f->owner);
-        l << QString("<b>Links:</b> %1").arg(f->links);
+        l << QString("<b>Links:</b> %1; <b>fdn:</b> %2").arg(f->links).arg(f->number);
         l << QString("<b>Modified:</b> %1").arg(f->when().isValid() ? f->when().toLocalTime().toString("d MMMM yyyy hh:mm:ss") : QString("no time"));
-        l << QString("<b>Fdn:</b> %1").arg(f->number);
         if (!node.problem.isEmpty()) l << "<b style=\"color:#b00000\">Problem:</b> " + node.problem.toHtmlEscaped();
     }
-    if (items.size() > 20) l << QString("<p>... and %1 more</p>").arg(items.size() - 20);
-    l << "<p>Read-only: " + readOnlyReason(0).toHtmlEscaped() + ".</p>";
+    if (its.size() > 20) l << QString("<p>... and %1 more</p>").arg(its.size() - 20);
+    if (its.isEmpty()) return false;
+    const bool w = writable(0);
     QDialog dlg(this);
-    dlg.setWindowTitle(items.size() == 1 ? "Properties - " + UniFlex::printable(items[0].path.name()) : QString("Properties - %1 items").arg(items.size()));
-    dlg.resize(520, 380);
+    dlg.setWindowTitle(its.size() == 1 ? "Properties - " + UniFlex::printable(its[0].item.path.name()) : QString("Properties - %1 items").arg(its.size()));
+    dlg.resize(560, 520);
     auto *tb = new QTextBrowser;
     tb->setHtml(l.join("<br>"));
-    auto *bb = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto *fl = new QFormLayout;
+    QLineEdit *name = nullptr;
+    if (its.size() == 1 && !(its[0].item.path.parts.size() == 1 && its[0].f.number == 2)) {
+        name = new QLineEdit(its[0].item.path.name());
+        name->setMaxLength(UniFlex::NameLength);
+        name->setReadOnly(!w);
+        fl->addRow("Name", name);
+    }
+    struct Box { quint8 bit; const char *key, *label; QCheckBox *cb; };
+    QVector<Box> boxes = {{UniFlex::OwnerRead, "ownerRead", "Owner: read (r)", nullptr},
+                          {UniFlex::OwnerWrite, "ownerWrite", "Owner: write (w)", nullptr},
+                          {UniFlex::OwnerExecute, "ownerExecute", "Owner: execute, or search a directory (x)", nullptr},
+                          {UniFlex::OthersRead, "othersRead", "Others: read (R)", nullptr},
+                          {UniFlex::OthersWrite, "othersWrite", "Others: write (W)", nullptr},
+                          {UniFlex::OthersExecute, "othersExecute", "Others: execute, or search a directory (X)", nullptr},
+                          {UniFlex::SetUserId, "setUserId", "Runs with its owner's user id (s)", nullptr}};
+    for (Box &b : boxes) {
+        b.cb = new QCheckBox(b.label);
+        int on = 0;
+        for (const It &i : its) if (i.f.access & b.bit) ++on;
+        if (on == 0) b.cb->setCheckState(Qt::Unchecked);
+        else if (on == its.size()) b.cb->setCheckState(Qt::Checked);
+        else { b.cb->setTristate(true); b.cb->setCheckState(Qt::PartiallyChecked); }
+        b.cb->setEnabled(w);
+        fl->addRow(b.cb);
+    }
+    auto *owner = new QLineEdit;
+    bool sameOwner = true;
+    for (const It &i : its) if (i.f.owner != its[0].f.owner) sameOwner = false;
+    owner->setText(sameOwner ? QString::number(its[0].f.owner) : QString());
+    owner->setPlaceholderText(sameOwner ? QString() : "(different owners: leave empty to keep them)");
+    owner->setReadOnly(!w);
+    fl->addRow("Owner (user id)", owner);
+    auto *bb = new QDialogButtonBox(w ? QDialogButtonBox::Ok | QDialogButtonBox::Cancel : QDialogButtonBox::Close);
     auto *lay = new QVBoxLayout(&dlg);
     lay->addWidget(tb);
+    lay->addLayout(fl);
+    if (!w) lay->addWidget(new QLabel("Read-only: " + readOnlyReason(0)));
     lay->addWidget(bb);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    dlg.exec();
+    if (dlg.exec() != QDialog::Accepted || !w) return false;
+    edit->eachOnItsOwn = true;
+    for (const It &i : its) {
+        PropertyChange c;
+        c.item = i.item;
+        for (const Box &b : boxes) {
+            if (b.cb->checkState() == Qt::PartiallyChecked) continue;
+            const bool want = b.cb->checkState() == Qt::Checked;
+            if (want != bool(i.f.access & b.bit)) c.attrs[b.key] = want;
+        }
+        const QString o = owner->text().trimmed();
+        if (!o.isEmpty() && o != QString::number(i.f.owner)) c.attrs["owner"] = o;
+        if (name && !name->text().isEmpty() && name->text() != i.item.path.name()) c.to = i.item.path.parent().child(name->text());
+        edit->changes << c;
+    }
+    return true;
+}
+
+// Edit > Volume name on a UniFLEX disc: the SIR's pack name and file system name (14 characters each) and number.
+bool MainWindow::uniflexVolume(VolumeEdit *edit) {
+    const UniFlex::Sir &s = m_doc.uniflex()->sir();
+    QDialog d(this);
+    d.setWindowTitle("Volume name");
+    auto *fl = new QFormLayout;
+    auto *pack = new QLineEdit(s.packNameText());
+    pack->setMaxLength(UniFlex::NameLength);
+    auto *fsName = new QLineEdit(s.fsNameText());
+    fsName->setMaxLength(UniFlex::NameLength);
+    auto *number = new QSpinBox;
+    number->setRange(0, 65535);
+    number->setValue(s.number);
+    fl->addRow("Pack name", pack);
+    fl->addRow("File system name", fsName);
+    fl->addRow("File system number", number);
+    auto *bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto *lay = new QVBoxLayout(&d);
+    lay->addLayout(fl);
+    lay->addWidget(bb);
+    connect(bb, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    if (d.exec() != QDialog::Accepted) return false;
+    edit->values = {{"label", pack->text()}, {"fsName", fsName->text()}, {"number", number->value()}};
+    edit->title = "Volume name";
+    return true;
 }
 
 void MainWindow::uniflexInfo() {

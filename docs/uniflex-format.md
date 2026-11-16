@@ -3,7 +3,7 @@
 UniFLEX is TSC's multi-user, Unix-like operating system for the 6809 (SWTPC S/09, Gimix and others), from 1980. Its
 discs have nothing in common with FLEX's but the maker: 512-byte blocks, a System Information Record (SIR) like a Unix
 superblock, file descriptor nodes (fdns, Unix's inodes) and a tree of directories. This program reads them (series
-`uniflex-1`); it doesn't write them yet.
+`uniflex-1`) and changes them as UniFLEX's kernel does (series `uniflex-2`, "How UniFLEX writes" below).
 
 ## Where the facts come from
 
@@ -19,10 +19,17 @@ UniFLEX releases and sources for SWTPC and Gimix machines. This work would not h
   (`mapfil`: a file's block map; `aldb` / `filfr`: taking a block from the free list), `/kernal/fdnman` (reading and
   writing fdns, `filfdn`: refilling the SIR's list of free fdns), `/kernal/fileman` (`crtsd`: device files). The
   owner's archives `UniFLEX_Kernel.z` and `UniFLEX_Core.z` (`design/background-docs`) hold the same files, byte for
-  byte.
-- **TSC's disc formatter**, `unibug/format` (UniFLEX Disk Format Program, core version 1.09, 29 November 1984), in the
-  kernel source sets the owner has (`testdata/UniFLEX/UniFLEX_SWTP_*`, `_GMX_*`, tar archives): how a new disc is laid
-  out (`mksir`, `mkrfdn`, `mkrtf`, `mkfree`, `mkbtkf`).
+  byte. For writing (series `uniflex-2`): `diskman` (`aldb`, `filfr`, `frdb`, `mkfch` and its `SORT_FREE_LIST`,
+  `rmvfil`, `frind`), `fdnman` (`alfdn`, `filfdn`, `frfdn`, `frefdn`, `updfdn`), `fileman` (`create`, `crfil`, `link`,
+  `unlink`, `chown`, `chprm`), `pathnam` (`pthnm`: where a new entry goes), `rdwr` (`filwr`).
+- **TSC's utilities** on `ufsources.dsk`: `/utils1/crdir` (1.05, 1984), `/utils2/copy`, `kill`, `rename`, `move`,
+  `/utils1/perms`, `owner`: the system calls each change is made of, in their order.
+- **TSC's disc formatter**, `unibug/format` (UniFLEX Disk Format Program, core version 1.09, 29 November 1984) with its
+  8" floppy part `formatfd`, in the kernel source sets the owner has (`testdata/UniFLEX/UniFLEX_SWTP_*`, `_GMX_*`, tar
+  archives; `uos-s3`, the configuration UniFLEX 3.14A reports, is the one followed): how a new disc is laid out
+  (`calcs`, `mksir`, `mffd`, `mfbl`, `mkrfdn`, `mkrtf`, `mkfree`, `dofb`, `mkbtkf`).
+- **UniFLEX running**: UniFLEX 3.14A (SWTPc UOS-S3) booted from a copy of the sample `fd0_nopassword` in MAME's
+  `swtpc09d3`, changing copies of discs in its second drive (series `uniflex-2`; "How UniFLEX writes").
 - **TSC's manuals** (`design/background-docs/`): *68xxx UniFLEX Programmer's Guide* (Sep 1986) for the mode and
   permission bits as `status` returns them; *68xxx UniFLEX System Manager's Guide* (Mar 1987), section 9, for the
   time ("seconds since January 1, 1980, at the zeroth meridian"). These describe the later 68000 version; where they
@@ -133,11 +140,133 @@ counts every free fdn.
 
 ## A new disc (`format`)
 
-`mksir`: the SIR as above, both times the time of formatting, the names and number typed. `mkrfdn`: fdn 1 the root
-(`$09`, `$3F`, 2 links, size 48), fdn 2 `/.badblocks` (`$01`, `$80`, 1 link: the bad blocks found, so empty on a good
-disc), both timed. `mkrtf`: the root's one block, the first after the fdn list: `.`, `..` and `.badblocks`. `mfbl` /
-`mkfree`: the free blocks from the next one up, the first `(free + 1) mod 100` (100 if that is 0) in the SIR, the
-rest in lists of 99 and a link, the last list ending in a zero link. The SIR's free fdn list starts at fdn 3.
+TSC's formatter (`uos-s3/unibug/format` 1.09, 29 November 1984, with its 8" floppy part `formatfd`: together UniFLEX
+3.14's `/etc/formatfd`) lays a disc out in `strd`:
+
+- **The shapes** (`formatfd`'s table): 77 cylinders; 8 blocks of 512 a side single density, 16 double; one side or two.
+  The SIR's `sdenf` and `ssidf` are the type's flags (0 or 1; `$11` for the "+" double-sided types).
+- **Sizes** (`calcs`): the volume is cylinders x heads x sectors blocks, less any swap space asked for (whole
+  cylinders, after the volume). The fdn list is a 33rd of the disc (`100/3`: "3%"), rounded down, unless a count is
+  given: 74 blocks on a 2464-block disc, 37 on 1232, 18 on 616. Free blocks: the volume less the fdn blocks and 3 (the
+  boot block, the SIR, the root's block). Free fdns: 8 a block, less the root and `/.badblocks`.
+- **The SIR** (`mksir`): both times the time of formatting, the names (up to 14 bytes, to a NUL) and number typed, the
+  counts, the flags, the swap space if any. `mffd`: fdns 3 up, at most 50. `mfbl`: `(free + 1) mod 100` blocks (100 if
+  that is 0), the first free ones, from block `fdn blocks + 3`, stored last entry first so that they are taken in
+  order; entry 0, the last of them, is the first list block.
+- **The fdns** (`clrfdn`, `mkrfdn`): every fdn block cleared; fdn 1 the root (`$09`, `$3F`, 2 links, size 48, its block
+  the first after the fdns), fdn 2 `/.badblocks` (`$01`, `$80`, 1 link: the bad blocks found, none on a good disc),
+  both timed. `mkrtf`: the root's block holds `.`, `..` and `.badblocks`.
+- **The free lists** (`mkfree`, `dofb`): each list block holds the next 99 blocks, entry 99 first, and in entry 0 the
+  block after them, the next list block; the last list stops at the end of the volume (its other entries and its link
+  zero).
+- **Block 0** (`mkbt`): TSC's bootstrap. The program leaves it empty: it carries no TSC code.
+
+The samples `dsdd8inch` and `dssd8inch` are this byte for byte (block 0 and the SIR's update time aside), and so is
+every new disc of the program (`tests/uniflex_check.py`, `format_disc`). **Checked against UniFLEX running:** UniFLEX
+3.14A's own `/etc/formatfd +n +m=FD-DD` in MAME made a disc identical to the program's `uniflex-ds-dd` disc of the same
+time, byte for byte, but for block 0 (the bootstrap).
+
+## How UniFLEX writes
+
+Read from the 6809 kernel (`kernal/diskman`, `fdnman`, `fileman`, `pathnam`, `rdwr`) and TSC's utilities on
+`ufsources.dsk` (`/utils1/crdir`, `/utils2/copy`, `kill`, `rename`, `move`, `/utils1/perms`, `owner`), then **checked
+against UniFLEX 3.14A running** (MAME's `swtpc09d3`, the workspace's `design/test-scripts/mame-uniflex`): the model in
+`tests/uniflex_check.py` (class `Kernel`), replaying the session's commands on the same disc, gives UniFLEX's result
+byte for byte but for the times.
+
+**Taking a block** (`aldb`): the SIR's count is lowered and entry `[count]` taken; a zero entry means the disc is full.
+When the entry taken is entry 0 (the count now 0), `filfr` first copies that block's first 300 bytes into the SIR's
+list and sets the count to 100; the link block is then used like any other. Every block taken is cleared (`clrbfr`), so
+the end of a file's last block is zeros. `sfreec` is lowered.
+
+**Freeing a block** (`frdb`): with the count 0, entry 0 is set to 0 (the end of the chain) and the count to 1; with the
+count 100, `mkfch` first sorts the SIR's entries 1-99, largest first (in the SIR itself: `SORT_FREE_LIST`), copies the
+whole list (entry 0 unmoved) into the first 300 bytes of the freed block (the other 212 are whatever the kernel's
+buffer held: the program leaves them as they were) and sets the count to 0. The block is then entry `[count]` and the
+count raised; `sfreec` too. So a run of blocks freed is taken again last first.
+
+**A file's blocks** (`mapfil` writing): block by block in order. A missing map slot or indirect block is taken when
+first needed, before the block under it: for block 10, the single indirect block, then the data block; for block 138,
+the double indirect block, the single indirect under it, then the data block. The size becomes the end of the last
+byte written (`filwr`).
+
+**Freeing a file's blocks** (`rmvfil`): the triple indirect tree, then the double, then the single (`frind`: each
+indirect block's entries from 127 down to 0, each freed or its tree freed, then the indirect block itself), then the
+direct blocks from 9 down to 0. The size and map become zero.
+
+**Taking an fdn** (`alfdn`): when the SIR's list is empty, `filfdn` refills it with the free fdns (mode byte 0) from fdn
+1 up, at most 50, skipping fdn blocks that `/.badblocks` names. The last entry is taken: the fdn is cleared and marked
+busy, `sfdnc` lowered. `crfil` then sets the mode and access (masked by the user's default permissions), 1 link and the
+user as owner.
+
+**Freeing an fdn** (when the last link and the last use go: `frefdn`): `rmvfil`, then the mode byte cleared and `frfdn`:
+`sfdnc` raised, and the fdn appended to the SIR's list if it holds fewer than 50. The fdn keeps its access, owner and
+(zero) link count; its size and map are zero.
+
+**Times**: an fdn is written with the system time at 48 whenever it is written (`updfdn`), so every fdn a change touches
+(the file, the directories whose entries change, an fdn taken or freed) gets the time of the change. The SIR is written
+(`update`) with the time at `sutime` and its in-memory bytes 0-3 zero. The program uses the time of the change for both.
+
+**Directory entries**: a new entry (`crfil`, `link`) goes into the first slot whose fdn is 0 (`pthnm` notes it while
+looking for the name), or after the last entry, growing the directory (a new block taken as above). A name is cut to
+14 bytes. Removing an entry (`unlink`) writes only its two fdn bytes as zero: the name stays in the slot, and the
+directory never shrinks.
+
+**Links**: `link` adds an entry and raises the link count; `unlink` lowers it (a count of 127 is never changed). The
+count reaching 0 frees the fdn as above.
+
+**The utilities**:
+
+- `crdir`: `crtsd` makes the directory (mode `$09`, access `$3F` masked, 1 link, its entry in the parent), `chown` to
+  the user, then `link` of the directory as `dir/.` (its first block taken; 2 links) and of the parent as `dir/..` (the
+  parent's links raised). A new directory is 32 bytes.
+- `copy` (and the program bringing a file in): `create`: a new file is `crfil` with the source's access; a name that
+  exists is reused, its blocks freed (`rmvfil`) and its fdn, access and owner kept. The data is then written in order.
+  The time is the time of the copy: `copy` keeps nothing of the source but its access.
+- `kill`: `unlink`. A directory (`kill +d`) only when it holds nothing but `.` and `..`: `dir/.` unlinked, then
+  `dir/..` (the parent's links lowered), then the directory.
+- `rename` and `move` within a disc: `link` to the new name, then `unlink` the old; a file of the new name is unlinked
+  first. **Neither renames nor moves a directory.**
+- `perms`: the seven access bits (`$80`, "execute only", kept). `owner`: the owner's user id.
+
+**Checked against UniFLEX running** (UniFLEX 3.14A in MAME, the workspace's `design/test-scripts/mame-uniflex`;
+16 Nov 2026): `crdir`, `copy` (small files, one reaching its single indirect block, one its double, one over a file
+that exists), `perms`, `owner`, `rename`, `kill`, `kill +d`, a directory growing past a block, on a sample disc and on
+one made by `uniflex_check.py`'s maker; the model in `uniflex_check.py`, replaying the same commands on the same disc,
+gives UniFLEX's result byte for byte, but for the times (UniFLEX's clock is the emulator's) and bytes 300-511 of the
+list blocks `mkfch` writes (below). The program gives the model's result byte for byte (`uniflex_check.py writes`).
+
+## Where the program chooses
+
+What UniFLEX's code doesn't settle, or settles in a way a disc image can't follow:
+
+- **The tail of a list block.** `mkfch` writes a whole buffer, of which UniFLEX sets only the first 300 bytes; the
+  other 212 are whatever the kernel's buffer last held (seen: other blocks' data, fdns, a directory of the system
+  disc). The program leaves them as the block held them. Nothing reads them.
+- **The time** of every fdn written and of the SIR is the time of the change, as UniFLEX gives it; a file brought in
+  doesn't keep its own (UniFLEX's `copy` keeps only the access).
+- **A file brought in** keeps the access bits and owner it brings (retro-files family `uniflex`); one that brings none
+  gets owner 0 (the system manager, as whoever runs `copy` as root) and `rw-rw-`, the access UniFLEX's shell gives a
+  file it creates (seen in UniFLEX 3.14A).
+  One brought over a file of the same name is that file emptied and written again, its fdn, access and owner kept
+  (UniFLEX's `create`).
+- **A change that doesn't fit** (the disc full, no free fdn) is refused and undone whole; UniFLEX would leave what it
+  had written.
+- **Directories** (owner, 16 Nov 2026: "we want to be compliant with the disk formats, but we want people to be able
+  to do things that are useful when arranging files on disks"). UniFLEX's `rename` and `move` refuse directories; the
+  kernel lets the system manager `link` and `unlink` one. The program renames a directory within its own directory
+  (link, then unlink: its `.` and `..` stay right) and moves one to another directory with the same calls a system
+  manager would use to do it by hand: `link` to the new name, `unlink` the old, `unlink` its `..` (the old parent's
+  links lowered), `link` the new parent as its `..` (in the slot just emptied; the new parent's links raised). Never
+  into itself or a directory inside it (the program follows the `..`s up from the destination). Deleting a directory deletes
+  what is in it first, depth first in the directory's order, each as `kill` does, then the directory as `kill +d`
+  does.
+- **`/.badblocks`** can't be deleted or renamed (UniFLEX's `unlink` refuses fdn 2 with its `$80`).
+- **Renaming onto a name that exists** is refused (the family's rule: the core asks for the name to be free), where
+  UniFLEX's `rename` would unlink that file first.
+- **The SIR's names and number** are written as they are typed, as `format` writes them; no UniFLEX utility changes
+  them on a made disc.
+- **A new disc** has no swap space and no bootstrap (above).
 
 ## The samples
 

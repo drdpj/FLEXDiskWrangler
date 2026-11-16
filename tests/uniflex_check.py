@@ -8,6 +8,10 @@
 #   uniflex_check.py make DIR                 synthetic UniFLEX discs (deterministic), described in make() below
 #   uniflex_check.py read IMAGE               this reader's view of a disc, as JSON
 #   uniflex_check.py compare FLEXDW IMAGE...  flexdw's ls -R / get / check against this reader; exit 1 on any difference
+#   uniflex_check.py writes FLEXDW DIR [SAMPLES]
+#                                             changes made by flexdw and by the Kernel model (UniFLEX's kernel and
+#                                             utilities, docs/uniflex-format.md "How UniFLEX writes"), byte for byte after
+#                                             every step, on DIR's synthetic discs (make) and copies of healthy samples
 #   uniflex_check.py samples FLEXDW LIST DIR...
 #                                             every sample named in LIST (tests/uniflex_samples.txt) found in the DIRs:
 #                                             compared, and its check's outcome (clean, or the faults it names) as LIST says
@@ -486,6 +490,460 @@ class Maker:
         return bytes(self.d)
 
 
+# ----------------------------------------------------------------------------------------------- writing
+
+class Refused(Exception):
+    pass
+
+
+class Kernel:
+    """UniFLEX's 6809 kernel changing a disc, written from docs/uniflex-format.md ("How UniFLEX writes") without the
+    program's code: the kernel's routines (aldb, frdb / mkfch, alfdn / filfdn, frfdn, mapfil, rmvfil, crfil, link,
+    unlink, chprm, chown, update) and on them the utilities (crdir, copy, kill, rename / move, perms, owner). Every
+    fdn written gets the time `now`, as does the SIR (update). The image is changed in place (a bytearray)."""
+
+    CDBLKS, CFDN, DIRENT = 100, 50, 16
+
+    def __init__(self, data, now):
+        self.d = bytearray(data)
+        self.now = now
+
+    # --- the SIR, in place
+    def _sir(self, off, size):
+        o = BLOCK + off
+        return int.from_bytes(self.d[o:o + size], 'big')
+
+    def _set_sir(self, off, size, v):
+        o = BLOCK + off
+        self.d[o:o + size] = v.to_bytes(size, 'big')
+
+    def _free(self, i):
+        return self._sir(190 + 3 * i, 3)
+
+    def _set_free(self, i, b):
+        self._set_sir(190 + 3 * i, 3, b)
+
+    def blk(self, b):
+        return self.d[b * BLOCK:(b + 1) * BLOCK]
+
+    # --- blocks: aldb (with filfr), frdb (with mkfch)
+    def aldb(self):
+        """A block from the free list, cleared; 0 when the disc is full (the SIR's count is lowered all the same)."""
+        n = self._sir(189, 1)
+        if n == 0:
+            return 0
+        n -= 1
+        self._set_sir(189, 1, n)
+        b = self._free(n)
+        if b == 0:
+            return 0
+        if n == 0:                                  # filfr: the link block's list becomes the SIR's
+            self.d[BLOCK + 190:BLOCK + 490] = self.d[b * BLOCK:b * BLOCK + 300]
+            self._set_sir(189, 1, self.CDBLKS)
+        self._set_sir(21, 3, self._sir(21, 3) - 1)
+        self.d[b * BLOCK:(b + 1) * BLOCK] = bytes(BLOCK)
+        return b
+
+    def frdb(self, b):
+        n = self._sir(189, 1)
+        if n == 0:
+            self._set_free(0, 0)
+            n = 1
+        elif n == self.CDBLKS:                     # mkfch: entries 1-99 sorted, largest first, into the freed block
+            ents = [self._free(i) for i in range(self.CDBLKS)]
+            ents = ents[:1] + sorted(ents[1:], reverse=True)
+            for i, x in enumerate(ents):               # sorted in the SIR itself, then copied out
+                self._set_free(i, x)
+            o = b * BLOCK
+            self.d[o:o + 300] = b''.join(x.to_bytes(3, 'big') for x in ents)   # 300-511 left as they were
+            n = 0
+        self._set_free(n, b)
+        self._set_sir(189, 1, n + 1)
+        self._set_sir(21, 3, self._sir(21, 3) + 1)
+
+    # --- fdns: the slot, alfdn (with filfdn), frfdn
+    def fo(self, n):
+        return 2 * BLOCK + (n - 1) * 64
+
+    def fdn(self, n):
+        return Fdn(self.d[self.fo(n):self.fo(n) + 64], n)
+
+    def put(self, n, **kv):
+        """Changes fields of fdn n and writes it with the time now (updfdn)."""
+        o = self.fo(n)
+        for k, v in kv.items():
+            if k == 'mode': self.d[o] = v
+            elif k == 'access': self.d[o + 1] = v
+            elif k == 'links': self.d[o + 2] = v
+            elif k == 'owner': self.d[o + 3:o + 5] = v.to_bytes(2, 'big')
+            elif k == 'size': self.d[o + 5:o + 9] = v.to_bytes(4, 'big')
+            elif k == 'map': self.d[o + 9:o + 48] = b''.join(x.to_bytes(3, 'big') for x in v)
+            else: raise KeyError(k)
+        self.d[o + 48:o + 52] = self.now.to_bytes(4, 'big')
+
+    def filfdn(self):
+        bad = set()
+        bb = Disc(bytes(self.d)).blocks(self.fdn(2))
+        if not isinstance(bb, str):
+            bad = set(x for x in bb[0] if x)
+        listed = []
+        nblocks = self._sir(16, 2)
+        for blk in range(2, nblocks + 2):
+            if blk in bad:
+                continue
+            for k in range(8):
+                n = (blk - 2) * 8 + k + 1
+                if self.d[self.fo(n)] == 0:
+                    listed.append(n)
+                    if len(listed) == self.CFDN:
+                        break
+            if len(listed) == self.CFDN:
+                break
+        for i, n in enumerate(listed):
+            self._set_sir(89 + 2 * i, 2, n)
+        self._set_sir(88, 1, len(listed))
+
+    def alfdn(self):
+        if self._sir(88, 1) == 0:
+            self.filfdn()
+            if self._sir(88, 1) == 0:
+                raise Refused('no free fdn')
+        k = self._sir(88, 1) - 1
+        self._set_sir(88, 1, k)
+        n = self._sir(89 + 2 * k, 2)
+        self.d[self.fo(n):self.fo(n) + 64] = bytes(64)
+        self.put(n, mode=0x01)
+        self._set_sir(24, 2, self._sir(24, 2) - 1)
+        return n
+
+    def frfdn(self, n):
+        self._set_sir(24, 2, self._sir(24, 2) + 1)
+        k = self._sir(88, 1)
+        if k < self.CFDN:
+            self._set_sir(89 + 2 * k, 2, n)
+            self._set_sir(88, 1, k + 1)
+
+    # --- a file's blocks: mapfil when writing, rmvfil
+    def _ind(self, b, k):
+        return int.from_bytes(self.d[b * BLOCK + 3 * k:b * BLOCK + 3 * k + 3], 'big')
+
+    def _set_ind(self, b, k, v):
+        self.d[b * BLOCK + 3 * k:b * BLOCK + 3 * k + 3] = v.to_bytes(3, 'big')
+
+    def mapw(self, n, i):
+        """The block of logical block i of fdn n, taking blocks as mapfil does when writing (map slot first, then
+        each indirect level, then the data block); 0 when the disc is full."""
+        f = self.fdn(n)
+        m = list(f.map)
+
+        def slot(s):
+            if not m[s]:
+                b = self.aldb()
+                if not b:
+                    return 0
+                m[s] = b
+                self.put(n, map=m)
+            return m[s]
+
+        def through(b, k):
+            x = self._ind(b, k)
+            if not x:
+                x = self.aldb()
+                if not x:
+                    return 0
+                self._set_ind(b, k, x)
+            return x
+
+        if i < 10:
+            return slot(i)
+        i -= 10
+        if i < 128:
+            b = slot(10)
+            return through(b, i) if b else 0
+        i -= 128
+        if i < 128 * 128:
+            b = slot(11)
+            b = through(b, i >> 7) if b else 0
+            return through(b, i & 127) if b else 0
+        i -= 128 * 128
+        b = slot(12)
+        b = through(b, i >> 14) if b else 0
+        b = through(b, (i >> 7) & 127) if b else 0
+        return through(b, i & 127) if b else 0
+
+    def write(self, n, pos, data):
+        """filwr: data at byte pos, block by block; the size grows to the end of what is written."""
+        f = self.fdn(n)
+        size = f.size
+        done = 0
+        while done < len(data):
+            p = pos + done
+            i, off = divmod(p, BLOCK)
+            take = min(BLOCK - off, len(data) - done)
+            b = self.mapw(n, i)
+            if not b:
+                raise Refused('disc full')
+            self.d[b * BLOCK + off:b * BLOCK + off + take] = data[done:done + take]
+            done += take
+            if p + take > size:
+                size = p + take
+        self.put(n, size=size)
+
+    def _frind(self, b, level):
+        for k in range(127, -1, -1):
+            x = self._ind(b, k)
+            if x:
+                if level == 1:
+                    self.frdb(x)
+                else:
+                    self._frind(x, level - 1)
+        self.frdb(b)
+
+    def rmvfil(self, n):
+        f = self.fdn(n)
+        if f.mode & 0x06:
+            return
+        for s, level in ((12, 3), (11, 2), (10, 1)):
+            if f.map[s]:
+                self._frind(f.map[s], level)
+        for s in range(9, -1, -1):
+            if f.map[s]:
+                self.frdb(f.map[s])
+        self.put(n, size=0, map=[0] * 13)
+
+    # --- directories
+    def entries(self, n):
+        f = self.fdn(n)
+        c = Disc(bytes(self.d)).content(f)
+        return [(u16(c, o), c[o + 2:o + 16]) for o in range(0, len(c) - 15, 16)]
+
+    @staticmethod
+    def name14(name):
+        name = name if isinstance(name, bytes) else name.encode('latin-1')
+        return name[:14].ljust(14, b'\0')
+
+    def search(self, d, name):
+        """pthnm in directory d: (slot of the name or None, first empty slot before it or None)."""
+        first = None
+        for k, (m, nm) in enumerate(self.entries(d)):
+            if m == 0:
+                if first is None:
+                    first = k
+                continue
+            if nm == self.name14(name):
+                return k, first
+        return None, first
+
+    def lookup(self, path):
+        """(parent directory, last name, fdn or None) of a path from the root."""
+        parts = [p for p in path.split('/') if p]
+        if not parts:
+            return 1, '', 1
+        at = 1
+        for p in parts[:-1]:
+            k, _ = self.search(at, p)
+            if k is None:
+                raise Refused('no directory ' + p)
+            at = self.entries(at)[k][0]
+            if self.fdn(at).mode != 0x09:
+                raise Refused('not a directory ' + p)
+        k, _ = self.search(at, parts[-1])
+        return at, parts[-1], (self.entries(at)[k][0] if k is not None else None)
+
+    def enter(self, d, name, n):
+        """crfil4: the entry in the first empty slot, or after the last."""
+        _, first = self.search(d, name)
+        pos = (first if first is not None else self.fdn(d).size // self.DIRENT) * self.DIRENT
+        self.write(d, pos, n.to_bytes(2, 'big') + self.name14(name))
+
+    # --- the system calls
+    def crfil(self, path, mode, access):
+        d, name, n = self.lookup(path)
+        if n is not None:
+            raise Refused('exists')
+        n = self.alfdn()
+        self.put(n, mode=mode | 0x01, access=access & 0x7F, links=1, owner=0)
+        self.enter(d, name, n)
+        return n
+
+    def link(self, old, new):
+        _, _, n = self.lookup(old)
+        d, name, m = self.lookup(new)
+        if m is not None:
+            raise Refused('exists')
+        f = self.fdn(n)
+        if f.links < 127:
+            self.put(n, links=f.links + 1)
+        self.enter(d, name, n)
+
+    def unlink(self, path):
+        d, name, n = self.lookup(path)
+        if n is None:
+            raise Refused('no file')
+        k, _ = self.search(d, name)
+        self.write(d, k * self.DIRENT, b'\0\0')
+        f = self.fdn(n)
+        links = f.links - 1 if f.links < 127 else f.links
+        self.put(n, links=links)
+        if links <= 0 and not (n == d):              # the last link: frefdn frees it
+            self.rmvfil(n)
+            o = self.fo(n)
+            self.d[o] = 0
+            self.frfdn(n)
+            self.put(n)
+
+    def update(self):
+        self.d[BLOCK:BLOCK + 4] = bytes(4)
+        self._set_sir(12, 4, self.now)
+
+    # --- the utilities
+    def crdir(self, path):
+        n = self.crfil(path, 0x08, 0x3F)
+        self.put(n, owner=0)                        # chown to the user (the system manager here)
+        self.link(path, path.rstrip('/') + '/.')
+        parent = path.rstrip('/').rsplit('/', 1)[0] or '/'
+        self.link(parent, path.rstrip('/') + '/..')
+        return n
+
+    def copy(self, data, path, access, owner=0):
+        """copy (or a file brought in): create, then the data written in order."""
+        d, name, n = self.lookup(path)
+        if n is not None:                           # create over a file: its blocks freed, its fdn kept
+            if self.fdn(n).mode == 0x09:
+                raise Refused('a directory')
+            self.rmvfil(n)
+        else:
+            n = self.crfil(path, 0, access)
+        if data:
+            self.write(n, 0, data)
+        return n
+
+    def kill(self, path):
+        d, name, n = self.lookup(path)
+        if n is None:
+            raise Refused('no file')
+        if self.fdn(n).mode == 0x09:
+            if any(m and nm.rstrip(b'\0') not in (b'.', b'..') for m, nm in self.entries(n)):
+                raise Refused('directory not empty')
+            self.unlink(path.rstrip('/') + '/.')
+            self.unlink(path.rstrip('/') + '/..')
+        self.unlink(path)
+
+    def remove(self, path):
+        """The program's delete: a directory's contents first, depth first in the directory's order, then each
+        directory as kill +d removes it."""
+        _, _, n = self.lookup(path)
+        if n is None:
+            raise Refused('no file')
+        if self.fdn(n).mode == 0x09:
+            for m, nm in self.entries(n):
+                nm = nm.rstrip(b'\0')
+                if m and nm not in (b'.', b'..'):
+                    self.remove(path.rstrip('/') + '/' + nm.decode('latin-1'))
+        self.kill(path)
+
+    def rename(self, old, new):
+        """rename / move: link to the new name (a file there unlinked first), then unlink the old. A directory moved
+        to another directory: then its .. unlinked and the new parent linked as its .. (link and unlink as the system
+        manager; UniFLEX's own tools move none). Not into itself or below."""
+        od, oname, n = self.lookup(old)
+        nd, nname, m = self.lookup(new)
+        is_dir = self.fdn(n).mode == 0x09
+        if is_dir and nd != od:
+            o = '/' + '/'.join(p for p in old.split('/') if p)
+            t = '/' + '/'.join(p for p in new.split('/') if p)
+            if t.startswith(o + '/'):
+                raise Refused('into itself')
+        if m == n:
+            if nd == od and self.name14(nname) == self.name14(oname):
+                return
+            raise Refused('the same file')
+        if m is not None:
+            if self.fdn(m).mode == 0x09:
+                raise Refused('a directory')
+            self.unlink(new)
+        self.link(old, new)
+        self.unlink(old)
+        if is_dir and nd != od:
+            self.unlink(new.rstrip('/') + '/..')
+            parent = new.rstrip('/').rsplit('/', 1)[0] or '/'
+            self.link(parent, new.rstrip('/') + '/..')
+
+    def perms(self, path, access):
+        _, _, n = self.lookup(path)
+        f = self.fdn(n)
+        self.put(n, access=(f.access & 0x80) | (access & 0x7F))
+
+    def owner(self, path, uid):
+        _, _, n = self.lookup(path)
+        self.put(n, owner=uid)
+
+
+def format_disc(cylinders, heads, sectors, density, sides, fsname=b'', pack=b'', number=0, now=0):
+    """A new disc as TSC's format 1.09 lays one out (uos-s3/unibug/format with formatfd: strd, calcs, mksir, mffd,
+    mfbl, mkrfdn, mkrtf, mkfree, dofb), with no bad blocks, no swap space, and block 0 (format's bootstrap) empty."""
+    volbc = cylinders * heads * sectors
+    fdnbc = volbc // (100 // 3)
+    frebc = volbc - (fdnbc + 3)
+    fdnfc = fdnbc * 8 - 2                                   # rtfcnt: the root and /.badblocks
+    blkic = (frebc + 1) % 100 or 100
+    frseq = 3 + fdnbc
+    d = bytearray(volbc * BLOCK)
+    sir = bytearray(BLOCK)
+    struct.pack_into('>II', sir, 8, now, now)
+    struct.pack_into('>H', sir, 16, fdnbc)
+    sir[18:21] = (volbc - 1).to_bytes(3, 'big')
+    sir[21:24] = frebc.to_bytes(3, 'big')
+    struct.pack_into('>H', sir, 24, fdnfc)
+    for off, n in ((26, fsname), (40, pack)):
+        n = n.split(b'\0')[0][:14]
+        sir[off:off + len(n)] = n
+    struct.pack_into('>H', sir, 54, number)
+    sir[58], sir[59] = density, sides
+    nf = min(50, fdnfc)                                     # mffd
+    sir[88] = nf
+    for i in range(nf):
+        struct.pack_into('>H', sir, 89 + 2 * i, 3 + i)
+    sir[189] = blkic                                        # mfbl: stored last entry first, frseq counting up
+    i = blkic
+    while i > 0:
+        i -= 1
+        sir[190 + 3 * i:193 + 3 * i] = frseq.to_bytes(3, 'big')
+        if i:
+            frseq += 1
+    frblk = frseq
+    d[BLOCK:2 * BLOCK] = sir
+    f = bytearray(128)                                      # mkrfdn: the templates rtfdn1, rtfdn2
+    f[0:3] = b'\x09\x3f\x02'
+    f[7:9] = (48).to_bytes(2, 'big')                        # fdb rtsiz, after fcb 0,0,0,0
+    f[10:12] = (fdnbc + 2).to_bytes(2, 'big')               # std 10,x: the root's block
+    f[64:67] = b'\x01\x80\x01'
+    for o in (48, 64 + 48):
+        f[o:o + 4] = now.to_bytes(4, 'big')
+    d[2 * BLOCK:2 * BLOCK + 128] = f
+    r = (fdnbc + 2) * BLOCK                                 # mkrtf: rtdir
+    for k, (n, name) in enumerate(((1, b'.'), (1, b'..'), (2, b'.badblocks'))):
+        d[r + 16 * k:r + 16 * k + 16] = n.to_bytes(2, 'big') + name.ljust(14, b'\0')
+    while frseq != volbc:                                   # mkfree: dofb until the end
+        buf = bytearray(BLOCK)
+        x, count, ended = 300, 99, False
+        while count:
+            frseq += 1
+            if frseq == volbc:
+                ended = True
+                break
+            x -= 3
+            buf[x:x + 3] = frseq.to_bytes(3, 'big')
+            count -= 1
+        if not ended:
+            frseq += 1
+            if frseq != volbc:
+                buf[0:3] = frseq.to_bytes(3, 'big')
+        d[frblk * BLOCK:(frblk + 1) * BLOCK] = buf
+        frblk = frseq
+    return bytes(d)
+
+
 def text(lines):
     return b''.join(l.encode() + b'\r' for l in lines)
 
@@ -721,7 +1179,230 @@ def samples(flexdw, listfile, dirs):
     return bad
 
 
+# ----------------------------------------------------------------------------------------------- writes
+
+UNIX_1980 = 315532800                        # 1 January 1980, 00:00 GMT, in Unix seconds
+DEFAULT_ACCESS = 0x1B                        # a host file that brings no access: rw-rw-, as UniFLEX's shell makes a file
+SDE = 1000000000                             # SOURCE_DATE_EPOCH for flexdw: the time of every change
+NOW = SDE - UNIX_1980
+
+
+def pattern(n, seed):
+    return bytes((i * 31 + seed * 7 + (i >> 9)) & 0xFF for i in range(n))
+
+
+def scenarios(syn, samples):
+    """(title, image, steps). Steps: ('put', dir, name, data[, replace]), ('mkdir', path), ('rm', path),
+    ('mv', from, to), ('access', path, bits), ('owner', path, uid), ('title', text)."""
+    out = []
+    basic = os.path.join(syn, 'uf-basic.dsk')
+    out.append(('files of every size on uf-basic.dsk', basic, [
+        ('put', '/', 'empty2', b''),
+        ('put', '/', 'one', b'1'),
+        ('put', '/', 'b511', pattern(511, 1)),
+        ('put', '/', 'b512', pattern(512, 2)),
+        ('put', '/', 'b513', pattern(513, 3)),
+        ('put', '/', 'direct10', pattern(10 * 512, 4)),                  # the last direct block
+        ('put', '/', 'single1', pattern(10 * 512 + 1, 5)),              # the single indirect block's first
+        ('put', '/src', 'double', pattern(138 * 512 + 700, 6)),         # past the single: the double indirect
+        ('rm', '/single1'),
+        ('rm', '/src/double'),
+        ('put', '/', 'again', pattern(3000, 7)),
+    ]))
+    out.append(('directories on uf-basic.dsk', basic, [
+        ('mkdir', '/new'),
+        ('mkdir', '/new/inner'),
+        ('put', '/new/inner', 'x', pattern(700, 8)),
+        ('put', '/new', 'y', pattern(100, 9)),
+        ('mv', '/new/y', '/new/inner/y2'),                              # a file moved
+        ('mv', '/new/inner', '/new/renamed'),                           # a directory renamed in place
+        ('mv', '/new/renamed', '/src/renamed'),                         # a directory moved: its .. now /src
+        ('mv', '/src/renamed', '/src/renamed/deeper'),                  # refused: into itself
+        ('mv', '/src', '/src/renamed/src'),                             # refused: into a directory inside it
+        ('mv', '/src/sub', '/sub'),                                     # up to the root, its file and hard link along
+        ('mkdir', '/src/renamed/in'),
+        ('mv', '/src/renamed', '/bin/r2'),                              # moved again, with a directory in it
+        ('mv', '/readme', '/README'),                                   # case matters
+        ('mv', '/Prog', '/fourteen_chars'),                             # refused: the name exists
+        ('rm', '/bin/r2'),                                              # a moved tree deleted: its .. found right
+        ('rm', '/src'),                                                 # a tree: contents first
+        ('rm', '/new'),
+        ('mkdir', '/new'),
+        ('rm', '/.badblocks'),                                          # refused
+    ]))
+    out.append(('attributes, replacing, names on uf-basic.dsk', basic, [
+        ('access', '/readme', 0x3F),
+        ('access', '/bin/hello', 0x01),                                  # set user id off, as everything but r
+        ('owner', '/readme', 12),
+        ('put', '/', 'readme', pattern(2000, 10), True),                 # replaced: its fdn, access, owner kept
+        ('put', '/', 'readme', pattern(9, 11)),                         # refused: exists
+        ('put', '/bin', 'hello', b'', True),                            # replaced by nothing
+        ('title', 'newpack'),
+    ]))
+    out.append(('the fdn list running out and refilled on uf-basic.dsk', basic,
+                [('mkdir', '/many')] + [('put', '/many', 'f%02d' % i, pattern(40, i)) for i in range(16)]
+                + [('rm', '/many/f03'), ('rm', '/many/f07')] + [('put', '/many', 'g%02d' % i, pattern(40, i)) for i in range(3)]
+                + [('put', '/', 'toomany%d' % i, b'z') for i in range(8)]))                    # the last refused
+    many = os.path.join(syn, 'uf-many.dsk')
+    out.append(('long free lists on uf-many.dsk', many, [
+        ('put', '/', 'huge', pattern(900 * 512 + 5, 12)),                # list blocks taken (filfr)
+        ('rm', '/huge'),                                                 # and full lists written (mkfch)
+        ('put', '/', 'huge2', pattern(400 * 512, 13)),
+        ('rm', '/lots'),
+        ('put', '/', 'end', pattern(1234, 14)),
+    ]))
+    out.append(('a disc filled on uf-basic.dsk', basic, [
+        ('put', '/', 'fill', pattern(300 * 512, 15)),
+        ('put', '/', 'over', pattern(200 * 512, 16)),                    # refused: the disc is full
+        ('rm', '/fill'),
+        ('put', '/', 'over', pattern(200 * 512, 16)),
+    ]))
+    if samples:
+        for name in ('dsdd8inch', 'fd0_nopassword', 'pw03', 'wd1'):
+            p = os.path.join(samples, name + '.dsk')
+            if os.path.exists(p):
+                out.append(('changes on the sample ' + name, p, [
+                    ('mkdir', '/dwtest'),
+                    ('put', '/dwtest', 'a', pattern(30000, 17)),
+                    ('put', '/dwtest', 'b', pattern(80000, 18)),
+                    ('mv', '/dwtest/a', '/dwtest/c'),
+                    ('access', '/dwtest/c', 0x2F),
+                    ('rm', '/dwtest/b'),
+                    ('rm', '/dwtest'),
+                ]))
+    return out
+
+
+def writes(flexdw, syn, samples=None):
+    """Each scenario's steps done by flexdw (one invocation, one save, each) and by the Kernel model; after every step
+    the image must be the model's byte for byte, and a step the model refuses must fail and change nothing."""
+    env = dict(os.environ, SOURCE_DATE_EPOCH=str(SDE), TZ='UTC')
+    bad = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        def run(*args):
+            return subprocess.run([flexdw, '--json'] + [str(a) for a in args], capture_output=True, timeout=300, env=env)
+
+        keys = (('ownerRead', 0x01), ('ownerWrite', 0x02), ('ownerExecute', 0x04), ('othersRead', 0x08),
+                ('othersWrite', 0x10), ('othersExecute', 0x20), ('setUserId', 0x40))
+        for title, image, steps in scenarios(syn, samples):
+            img = os.path.join(tmp, 'img.dsk')
+            with open(image, 'rb') as fh:
+                data = fh.read()
+            with open(img, 'wb') as fh:
+                fh.write(data)
+            model = Kernel(data, NOW)
+            problems = []
+            for k, step in enumerate(steps, 1):
+                op, args = step[0], step[1:]
+                before = bytes(model.d)
+                refused = None
+                try:
+                    cmd = None
+                    if op == 'put':
+                        d, name, payload = args[:3]
+                        replace = len(args) > 3 and args[3]
+                        p = os.path.join(tmp, 'host', name)
+                        os.makedirs(os.path.dirname(p), exist_ok=True)
+                        with open(p, 'wb') as fh:
+                            fh.write(payload)
+                        path = d.rstrip('/') + '/' + name
+                        cmd = ('put', img, p, d) + (('--replace',) if replace else ())
+                        if model.lookup(path)[2] is not None and not replace:
+                            raise Refused('exists')
+                        model.copy(payload, path, DEFAULT_ACCESS)
+                    elif op == 'mkdir':
+                        model.crdir(args[0])
+                        cmd = ('mkdir', img, args[0])
+                    elif op == 'rm':
+                        cmd = ('rm', img, args[0], '-r')
+                        if args[0] == '/.badblocks':
+                            raise Refused('.badblocks')
+                        model.remove(args[0])
+                    elif op == 'mv':
+                        cmd = ('mv', img, args[0], args[1])
+                        if model.lookup(args[1])[2] is not None:
+                            raise Refused('exists (the core never renames onto a name)')
+                        model.rename(args[0], args[1])
+                    elif op == 'access':
+                        model.perms(args[0], args[1])
+                        cmd = ('attr', img, args[0]) + tuple('--set=%s=%s' % (key, 'true' if args[1] & bit else 'false') for key, bit in keys)
+                    elif op == 'owner':
+                        model.owner(args[0], args[1])
+                        cmd = ('attr', img, args[0], '--set=owner=%d' % args[1])
+                    elif op == 'title':
+                        model.d[BLOCK + 40:BLOCK + 54] = args[0].encode('latin-1')[:14].ljust(14, b'\0')
+                        cmd = ('title', img, args[0])
+                    else:
+                        raise ValueError(op)
+                except Refused as e:
+                    refused = str(e)
+                    model.d = bytearray(before)
+                else:
+                    model.update()
+                r = run(*cmd)
+                with open(img, 'rb') as fh:
+                    got = fh.read()
+                if refused:
+                    if r.returncode == 0 or got != before:
+                        problems.append('step %d %s: the model refuses it (%s), flexdw %s' % (k, step[:2], refused,
+                                        'did it' if r.returncode == 0 else 'changed the image'))
+                    continue
+                if r.returncode != 0:
+                    problems.append('step %d %s: flexdw failed: %s' % (k, step[:2], (r.stdout + r.stderr).decode()[-300:]))
+                    model.d = bytearray(got)
+                    continue
+                if got != bytes(model.d):
+                    diff = [i for i in range(min(len(got), len(model.d))) if got[i] != model.d[i]]
+                    blocks = sorted(set(i // BLOCK for i in diff))
+                    problems.append('step %d %s: %d bytes differ from the model, blocks %s (first at %d: flexdw %02x, model %02x)'
+                                    % (k, step[:2], len(diff), blocks[:12], diff[0], got[diff[0]], model.d[diff[0]]))
+                    model.d = bytearray(got)
+                    continue
+                errs = Disc(got).check()
+                if errs:
+                    problems.append('step %d %s: the result has errors: %s' % (k, step[:2], errs[:5]))
+            print('%s: %s' % (title, 'ok (%d steps)' % len(steps) if not problems else 'FAILED'))
+            for p in problems:
+                print('   ' + p)
+            bad += bool(problems)
+        # new discs: flexdw new against format_disc, byte for byte, then the disc filled and emptied again
+        for pid, shape in (('uniflex-ss-sd', (77, 1, 8, 0, 0)), ('uniflex-ss-dd', (77, 1, 16, 1, 0)),
+                           ('uniflex-ds-sd', (77, 2, 8, 0, 1)), ('uniflex-ds-dd', (77, 2, 16, 1, 1))):
+            img = os.path.join(tmp, pid + '.dsk')
+            r = run('new', img, '--format=' + pid, '--title=pack ' + pid[-5:])
+            want = format_disc(*shape, pack=('pack ' + pid[-5:]).encode(), now=NOW)
+            got = open(img, 'rb').read() if os.path.exists(img) else b''
+            problems = []
+            if r.returncode != 0:
+                problems.append('flexdw new failed: ' + (r.stdout + r.stderr).decode()[-300:])
+            elif got != want:
+                diff = [i for i in range(min(len(got), len(want))) if got[i] != want[i]]
+                problems.append('%d bytes differ from format_disc (sizes %d, %d), blocks %s' % (len(diff), len(got), len(want), sorted(set(i // BLOCK for i in diff))[:10]))
+            elif Disc(got).check():
+                problems.append('the new disc has errors: %s' % Disc(got).check()[:3])
+            else:
+                model = Kernel(got, NOW)
+                data = pattern(Disc(got).free * BLOCK // 2, 19)
+                p = os.path.join(tmp, 'host', 'half')
+                with open(p, 'wb') as fh:
+                    fh.write(data)
+                for cmd, act in ((('put', img, p, '/'), lambda: model.copy(data, '/half', DEFAULT_ACCESS)),
+                                 (('rm', img, '/half'), lambda: model.remove('/half'))):
+                    act()
+                    model.update()
+                    if run(*cmd).returncode != 0 or open(img, 'rb').read() != bytes(model.d):
+                        problems.append('%s on the new disc: not the model\'s result' % cmd[0])
+                        break
+            print('new disc %s: %s' % (pid, 'ok' if not problems else 'FAILED'))
+            for p in problems:
+                print('   ' + p)
+            bad += bool(problems)
+    return bad
+
+
 def main():
+    if len(sys.argv) in (4, 5) and sys.argv[1] == 'writes':
+        sys.exit(1 if writes(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) == 5 else None) else 0)
     if len(sys.argv) == 3 and sys.argv[1] == 'make':
         make(sys.argv[2])
     elif len(sys.argv) == 3 and sys.argv[1] == 'read':

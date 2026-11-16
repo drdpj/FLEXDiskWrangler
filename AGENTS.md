@@ -17,8 +17,9 @@ family with Acorn Disk Wrangler and CP/M Disk Wrangler, built on **DiskWranglerC
 One disc per window. It lists, views, extracts, drags out and copies files, and checks the disc (series flex-1); it
 adds, deletes, renames and protects files, changes the volume name and number, makes new discs and copies a boot
 loader from another disc (series flex-2), every change **as FLEX's own file management system makes it**
-(`docs/disc-format.md`, "How FLEX writes"). It also reads **UniFLEX** discs (series uniflex-1, read-only): the tree,
-the files, the check of the whole file system.
+(`docs/disc-format.md`, "How FLEX writes"). It also reads **UniFLEX** discs (series uniflex-1: the tree, the files, the
+check of the whole file system) and changes them as UniFLEX's kernel and utilities do (series uniflex-2: files,
+directories, renames and moves of files, access, owners, the SIR's names, new discs as TSC's formatter makes them).
 
 * **Licence and headers.** GPLv3-or-later. Every source file starts with the header naming
   `Copyright (C) 2026 Daniel Jameson` (`#` comments for scripts and build files); put it on any new file.
@@ -33,15 +34,16 @@ the files, the check of the whole file system.
 | File | Role |
 |---|---|
 | `flexdisk.h/.cpp` | `Flex::Disk`, the filesystem on a `dw::device::Linear`: the SIR, the directory (every slot of every directory sector), each file's chain, reading a file (a random file without its two map sectors), `check()`; writing as FLEX does (`writeFile`, `deleteFile`, `renameFile`, `setProtection`, the volume name and number, the boot loader's sectors and link, `makeBlank` as NEWDISK), each change ending in a `reload()`. QtCore, no core interfaces |
-| `flexvolume.h/.cpp` | DiskWranglerCore's side: `Flex::NameRules`, `FlexVolume` (the `dw::fs::Volume`, `fsId()` "flex", flat, attributes write / delete / read / catalog (editable) / random / sectors, retro-files family `flex`; a file written keeps the date and protection it brings, as FLEX's COPY does), `OpenedDisc` (the window's Document and `flexdw`'s opened image alike: a FLEX disc (`disk()`, mount "FLEX", group "flex": the raw layout from the SIR, read-only for errors or a size that isn't the SIR's geometry) or a UniFLEX one (`uniflex()`, mount "UniFLEX", group "uniflex", always read-only: the file as 512-byte blocks), the checked save, Save As raw only), `self()` / `appInfo()`, the presets (the sample discs' shapes), `createBlank`, `readBootLoader`, `FlexProbe`, `OtherSystemsProbe` (OS-9: named, not supported), `verdict()` (FLEX, UniFLEX, OS-9); the presets carry `track0` (a short track 0 is padded in the image) |
+| `flexvolume.h/.cpp` | DiskWranglerCore's side: `Flex::NameRules`, `FlexVolume` (the `dw::fs::Volume`, `fsId()` "flex", flat, attributes write / delete / read / catalog (editable) / random / sectors, retro-files family `flex`; a file written keeps the date and protection it brings, as FLEX's COPY does), `OpenedDisc` (the window's Document and `flexdw`'s opened image alike: a FLEX disc (`disk()`, mount "FLEX", group "flex": the raw layout from the SIR, read-only for errors or a size that isn't the SIR's geometry) or a UniFLEX one (`uniflex()`, mount "UniFLEX", group "uniflex": the file as 512-byte blocks, read-only for errors or a file shorter than its volume), the checked save, Save As raw only), `self()` / `appInfo()`, the presets (the sample discs' shapes, TSC's FLEX formats, and TSC's four 8" UniFLEX formats, `fsId` "uniflex"), `createBlank` (a UniFLEX preset through `UniFlex::formatDisc`), `readBootLoader`, `FlexProbe`, `OtherSystemsProbe` (OS-9: named, not supported), `verdict()` (FLEX, UniFLEX, OS-9); the presets carry `track0` (a short track 0 is padded in the image) |
 | `uniflexfs.h/.cpp` | `UniFlex::Fs`, the UniFLEX filesystem on a `dw::device::Linear` of 512-byte blocks: the SIR, the fdns, the tree from the root (`Node`s, each directory listed once), a file's block map (10 direct, single, double, triple indirect; never-written blocks read as zeros), the free list as the kernel takes it, `check()`. Reading only. QtCore, no core interfaces |
-| `uniflexvolume.h/.cpp` | `UniFlex::NameRules` (1-14 bytes, case-sensitive), `UniFlexVolume` (`fsId()` "uniflex", directories; attributes the seven access bits and the owner (retro-files family `uniflex`), links, fdn, type; every change refused with `ReadOnlyText`), `UniFlexProbe` (a UniFLEX SIR and a root directory: certain when the file is exactly the volume and swap space) |
+| `uniflexvolume.h/.cpp` | `UniFlex::NameRules` (1-14 bytes, case-sensitive), `UniFlexVolume` (`fsId()` "uniflex", directories; attributes the seven access bits and the owner (retro-files family `uniflex`), links, fdn, type; each change a `UniFlex::Writer` call with the time now from the core's clock), `UniFlexProbe` (a UniFLEX SIR and a root directory: certain when the file is exactly the volume and swap space) |
+| `uniflexwrite.h/.cpp` | `UniFlex::Writer`: every change as UniFLEX makes it, the kernel's routines step by step (`aldb` / `filfr`, `frdb` / `mkfch`, `alfdn` / `filfdn`, `frfdn`, `mapfil` writing, `rmvfil`, `crfil`, `link`, `unlink`, `update`) and the utilities on them (`copy`, `crdir`, `kill`, `rename`, `perms`, `owner`), writing through the disc's `Linear`, each change ending in `Fs::reload`; `formatDisc` (a new disc as TSC's `format` lays it out). QtCore, no core interfaces |
 | `flextext.h/.cpp` | FLEX text for the viewer: CR line ends, TAB + count space compression, NUL padding |
 | `hostpolicy.h/.cpp` | QtCore, shared with `flexdw`: `Flex::HostPolicy` (files out as stored, upper-case names lower-cased) and `hostRead()` (the core's host reader's rules) |
 | `mainwindow.*` | the window on the core's kit (`dw::ui::DiscWindow`): two panes, one shown at a time and no tabs (`paneGroups` "flex" and "uniflex", `paneShown`); `FlexPane` (drags out with `execDragOut`; a window with no disc opens dropped images, a writable disc imports dropped files and retro-files JSON), the hooks (columns, rows, status, opening, Save As, Properties with the name and protection, Volume name and number, Disc information with the boot loader; for UniFLEX the tree's columns and rows, a Properties and a Disc information that only show), New disc image, Add files, Paste, Rename, Copy boot loader from / Link boot loader to file. `hasDisc()` is any disc, `hasFlex()` / `hasUniflex()` which |
 | `viewer.*` | View: the core's viewer dialog with FLEX's text view, or UniFLEX's (CR line ends, TABs kept: the dialog's context `fs` says which), in place of the plain one |
 | `icon.*` | the 5.25-inch floppy icon (QPainter); `icons/` holds the PNGs (`tests/mkicon`), the `.ico` / `.icns` (Pillow) and a hand-written SVG that renders the same |
-| `cli/` | `flexdw`: `FlexCli::Backend` (open through the same detection and `OpenedDisc`; `new` from the presets, `--title` the volume name; a file whose size isn't its geometry read-only); the commands are the core's |
+| `cli/` | `flexdw`: `FlexCli::Backend` (open through the same detection and `OpenedDisc`; `new` from the presets, `--title` the volume or pack name; a file whose size isn't its geometry read-only); the commands are the core's |
 
 **Raw images only, so far.** `OpenedDisc::attach` gives the raw file a layout of `last track + 1` cylinders, one head,
 `sectors` sectors of 256 bytes from ID 1, so the stored bytes are FLEX's logical sectors in order. The probe looks only
@@ -61,9 +63,13 @@ samples yet.)
    exactly the state a change left in memory (every `Disk` change ends by reading the disc again; `voltest` compares).
    Changing the disc outside `FlexVolume` (the boot loader) is done in a transaction too.
 5. **Files go out as stored** (owner, 15 Nov 2026): no conversion of text on Extract, drags or Copy.
-6. **UniFLEX discs are read-only** (series uniflex-1): `UniFlexVolume` refuses every change, `OpenedDisc` marks the
-   mount read-only and refuses to save. What a UniFLEX disc holds is settled from TSC's kernel and formatter sources
-   (`docs/uniflex-format.md`); `tests/uniflex_check.py` is the independent reader written from that document.
+6. **UniFLEX behaviour follows UniFLEX itself** (series uniflex-2): how a change is made (which blocks and fdns are
+   taken and freed and in what order, where a new entry goes, the free lists and the SIR after it, a new disc) is
+   settled from TSC's kernel, utility and formatter sources and recorded in `docs/uniflex-format.md` ("How UniFLEX
+   writes", "A new disc", "Where the program chooses") before the program does it; it was checked against UniFLEX
+   3.14 running in MAME (the workspace's `design/test-scripts/mame-uniflex`). `tests/uniflex_check.py` holds the
+   program to it: its reader (`compare`, `samples`) and its model of the kernel (`writes`, byte for byte). A UniFLEX
+   disc with check errors, or a file shorter than its volume, is read-only.
 7. **FLEX behaviour follows FLEX itself**: anything about how FLEX writes (deletion, where new entries and sectors go,
    the SIR after a change, new discs) is settled from FLEX on the sample system discs (FLEX 2.0 and three FLEX 9s,
    disassembled; the FMS's source on FLX505), and recorded in `docs/disc-format.md`, before the program does it.
@@ -73,10 +79,11 @@ samples yet.)
 ## The window (kept in step with the family)
 Menus, button bar and context menu in the family's order (CP/M Disk Wrangler's AGENTS.md, "The window"): File: New
 window, New disc image, Open | Save, Save as, Revert | Create local config file | Close, Quit. Edit: View (F3), Extract
-to folder (Ctrl+E) | Add files | Copy, Paste | Rename (F2), Properties (Alt+Return), Delete | Volume name. Tools: Check
-disc (Ctrl+K), Disc information (Ctrl+I) | Copy boot loader from, Link boot loader to file | Keep a .bak copy when saving. Buttons:
-View, Extract, Add files, Rename, Properties, Delete. `guitest` asserts the order. Window
-title `<file> * - FLEX Disk Wrangler`.
+to folder (Ctrl+E) | Add files, New directory (F7, as Acorn's; UniFLEX discs only) | Copy, Paste | Rename (F2), Properties
+(Alt+Return), Delete | Volume name. Tools: Check disc (Ctrl+K), Disc information (Ctrl+I) | Copy boot loader from, Link
+boot loader to file | Keep a .bak copy when saving. Buttons: View, Extract, Add files, New dir, Rename, Properties,
+Delete. `guitest` asserts the order. Window title `<file> * - FLEX Disk Wrangler`. On a UniFLEX disc, files copied in
+go to the folder selected (or the selected file's folder), or the one dropped on.
 
 ## Build
 ```

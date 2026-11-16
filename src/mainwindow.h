@@ -66,19 +66,27 @@ public:
     void addFilesDialog() override;
     void paste() override;
     void renameSelected() override;
+    void newDirectory() override;
 
     // What the dialogs do, for them and the tests. newImage: a blank disc (Flex::createBlank) at path, its boot loader
     // copied from bootSource if one is named, opened in this window (or a new one if this one has a disc). The others
     // change the open disc in one transaction each.
     bool newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err);
     bool renameFile(const Item &item, const QString &newName, QString *err);
+    // A UniFLEX directory made in dir (the root: an empty path).
+    bool makeDirectory(const dw::fs::Path &dir, const QString &name, QString *err);
     // The boot loader of another FLEX disc copied in (sectors 1 and 2), linked to FLEX.SYS if this disc has one, else
     // left unlinked; *done says which.
     bool copyBootLoader(const QString &image, QString *done, QString *err);
     // LINK: the boot loader pointed at a file's first sector.
     bool linkBootLoader(const Item &item, QString *err);
+    // Host files and retro-files JSON copied in: to dir on a UniFLEX disc (by default the selected directory, or the
+    // selected file's), always to the one directory of a FLEX disc.
     void importPaths(const QStringList &paths);
+    void importPaths(const QStringList &paths, const dw::fs::Path &dir);
     void importJson(const QByteArray &json);
+    // Where copied-in files go for a row of the pane (null: the current row).
+    dw::fs::Path importTarget(QTreeWidgetItem *row = nullptr) const;
 
 protected:
     ActionSpec actionSpec(Act a) const override;
@@ -111,7 +119,8 @@ private slots:
     void linkBootLoaderSelected();
 
 private:
-    void uniflexProperties(const QVector<Item> &items);
+    bool uniflexProperties(const QVector<Item> &items, PropertiesEdit *edit);
+    bool uniflexVolume(VolumeEdit *edit);
     void uniflexInfo();
     void decorateUniflexRow(QTreeWidgetItem *row, const dw::fs::Entry &e) const;
     Flex::OpenedDisc m_doc;

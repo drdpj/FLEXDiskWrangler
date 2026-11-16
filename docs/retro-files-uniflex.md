@@ -24,4 +24,6 @@ is the file's bytes, exactly its size; blocks UniFLEX never wrote come out as ze
 ends and their TABs. A directory travels as a folder with its contents. A device file travels as an empty file (its
 device numbers don't travel); the program's listing shows them.
 
-FLEX Disk Wrangler doesn't write UniFLEX discs yet, so nothing receives these keys so far.
+**Received** (series `uniflex-2`): a file brought onto a UniFLEX disc gets the access bits and owner the item brings
+(keys left out: owner 0 and `rw-rw-`, as UniFLEX's shell makes a file; as `docs/uniflex-format.md` "Where the program chooses" says); its date is
+not kept: UniFLEX gives a file the time it is written. A folder becomes a directory.

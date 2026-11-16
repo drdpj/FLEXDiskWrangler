@@ -81,10 +81,10 @@ public:
         o["directories"] = fs.dirCount() + 1;
         return o;
     }
-    // The check's errors are flexdw's own (exit 4); a file whose size isn't its SIR's geometry can't be written, nor
-    // can a UniFLEX disc (read-only in this version)
+    // The check's errors are flexdw's own (exit 4); a FLEX file whose size isn't its SIR's geometry can't be written,
+    // nor can a UniFLEX file shorter than its volume
     QString readOnlyWhy() const override {
-        if (od.uniflex()) return UniFlex::UniFlexVolume::ReadOnlyText;
+        if (od.uniflex()) return od.uniflex()->shortImage() ? "the image file is shorter than the UniFLEX volume in its System Information Record" : QString();
         return od.writableGeometry() ? QString() : Flex::OpenedDisc::GeometryText;
     }
 };
@@ -133,17 +133,19 @@ QJsonArray Backend::formats() const {
         o["track0Sectors"] = p.extra.value("track0").toInt();            // the directory ends at its last sector
         o["doubleSided"] = p.doubleSided;
         o["bytes"] = qint64(p.bytes);
+        o["fs"] = p.fsId;
         a.append(o);
     }
     return a;
 }
 
-// A blank disc as NEWDISK lays one out (Flex::createBlank), named by --title, number 0, dated today; no boot loader.
+// A blank disc as NEWDISK lays one out, or a UniFLEX one as TSC's formatter does (Flex::createBlank), named by --title
+// (the pack name), number 0, dated now; no boot loader.
 bool Backend::create(const QString &file, const NewOptions &n, QString *err, int *exit) {
     const dw::fs::Preset *p = Flex::findPreset(n.format);
     if (!p) { *err = QString("unknown format '%1' (flexdw new --list)").arg(n.format); *exit = ExitUsage; return false; }
     QByteArray name;
-    if (!Flex::volumeNameBytes(n.title, &name, err)) { *exit = ExitUsage; return false; }
+    if (!(p->fsId == "uniflex" ? Flex::uniflexPackBytes(n.title, &name, err) : Flex::volumeNameBytes(n.title, &name, err))) { *exit = ExitUsage; return false; }
     if (!Flex::createBlank(file, *p, n.title, 0, dw::now().date(), QByteArray(), err)) { *exit = ExitSave; return false; }
     return true;
 }

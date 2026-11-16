@@ -105,7 +105,7 @@ int main(int argc, char **argv) {
     if (AppSettings::offered()) wantFile << "Create &local config file..." << "|";      // only where portable settings exist
     wantFile << "&Close" << "&Quit";
     CHECK(file == wantFile, "File: " + file.join(", "));
-    CHECK(edit == QStringList({"&View (text / hex)", "E&xtract to folder...", "|", "&Add files...", "|", "&Copy", "&Paste", "|",
+    CHECK(edit == QStringList({"&View (text / hex)", "E&xtract to folder...", "|", "&Add files...", "New &directory...", "|", "&Copy", "&Paste", "|",
                                "Re&name...", "P&roperties...", "&Delete", "|", "Volume &name..."}), "Edit: " + edit.join(", "));
     CHECK(tools == QStringList({"&Check disc", "Disc &information", "|", "Copy &boot loader from...", "&Link boot loader to file", "|",
                                 "Keep a .bak copy when saving"}), "Tools: " + tools.join(", "));
@@ -247,15 +247,16 @@ int main(int argc, char **argv) {
     delete w5;
     delete w3;
 
-    printf("a UniFLEX disc (uf-basic.dsk): a tree, read-only\n");
+    printf("a UniFLEX disc (uf-basic.dsk): a tree, changed as UniFLEX changes it\n");
     auto *w6 = new MainWindow;
     w6->show();
-    CHECK(w6->openFile(dir + "/uf-basic.dsk") && w6->hasUniflex() && !w6->hasFlex(), "opened as UniFLEX");
+    QFile::copy(dir + "/uf-basic.dsk", work.path() + "/uf-basic.dsk");
+    CHECK(w6->openFile(work.path() + "/uf-basic.dsk") && w6->hasUniflex() && !w6->hasFlex(), "opened as UniFLEX (a copy)");
     dw::ui::VolumePane *up = w6->pane("uniflex");
     CHECK(up && w6->tabWidget()->currentWidget() == up && w6->tabWidget()->count() == 1 && !w6->tabWidget()->tabBar()->isVisible(),
           "the UniFLEX pane, alone, no tabs");
     const QString ust = w6->statusBar()->currentMessage();
-    CHECK(ust.startsWith("UniFLEX, 600 blocks - 12 files in 5 directories") && ust.contains("read-only"), "status: " + ust);
+    CHECK(ust.startsWith("UniFLEX, 600 blocks - 12 files in 5 directories") && !ust.contains("read-only"), "status: " + ust);
     QTreeWidgetItem *uroot = up ? up->topLevelItem(0) : nullptr;
     CHECK(uroot && uroot->text(0).contains("uf-basic.dsk") && uroot->text(0).contains("basic"), "root: " + (uroot ? uroot->text(0) : QString()));
     QTreeWidgetItem *usrc = childNamed(uroot, "src"), *ureadme = childNamed(uroot, "readme"), *uprog = childNamed(uroot, "Prog");
@@ -266,17 +267,17 @@ int main(int argc, char **argv) {
         CHECK(uprog->text(1) == "rwxr-x" && uprog->text(2).trimmed() == "3", "Prog: rwxr-x, owner 3");
         CHECK(tty->text(4) == "character device 3, 1", "dev/tty0: " + tty->text(4));
     }
-    CHECK(!w6->action(Act::AddFiles)->isEnabled() && !w6->action(Act::Paste)->isEnabled() && w6->action(Act::NewImage)->isEnabled(),
-          "Add files and Paste greyed; New disc image (FLEX) still there");
+    CHECK(w6->action(Act::AddFiles)->isEnabled() && w6->action(Act::Paste)->isEnabled() && w6->action(Act::NewDirectory)->isEnabled() &&
+          w6->action(Act::NewImage)->isEnabled(), "Add files, Paste and New directory there; New disc image (FLEX) too");
     QAction *volName = menuAction(w6, "&Edit", "Volume &name..."), *bootFrom = menuAction(w6, "&Tools", "Copy &boot loader from...");
-    CHECK(volName && !volName->isEnabled() && bootFrom && !bootFrom->isEnabled(), "Volume name and the boot loader greyed");
+    CHECK(volName && volName->isEnabled() && bootFrom && !bootFrom->isEnabled(), "Volume name there (the SIR's names); the boot loader greyed");
     if (ureadme) {
         up->clearSelection();
         ureadme->setSelected(true);
         up->setCurrentItem(ureadme);
         w6->updateUi();
         CHECK(w6->action(Act::View)->isEnabled() && w6->action(Act::Extract)->isEnabled() && w6->action(Act::Properties)->isEnabled() &&
-              !w6->action(Act::Rename)->isEnabled() && !w6->action(Act::Delete)->isEnabled(), "a file selected: View, Extract, Properties; no Rename or Delete");
+              w6->action(Act::Rename)->isEnabled() && w6->action(Act::Delete)->isEnabled(), "a file selected: View, Extract, Properties, Rename, Delete");
         w6->viewSelected();
         ViewerDialog *uv = w6->findChild<ViewerDialog *>();
         CHECK(uv && uv->viewId() == "uniflextext" && uv->shownText() == "UniFLEX test disc\n\tindented with a TAB\nlast line\n",
@@ -298,6 +299,30 @@ int main(int argc, char **argv) {
           "dated from its fdn: " + QFileInfo(uout.path() + "/Prog").lastModified().toUTC().toString(Qt::ISODate));
     QMetaObject::invokeMethod(w6, "discInfo");
     CHECK(w6->statusBar()->currentMessage() == "info shown", "Disc information");
+    // changes: a directory made, files copied into it, a rename in place; then saved and read again
+    CHECK(w6->makeDirectory(dw::fs::Path({"src"}), "made", &err) && w6->document()->uniflex()->find({"src", "made"}) >= 0,
+          "New directory: src/made: " + err);
+    QDir().mkpath(work.path() + "/uhost");
+    QFile uh(work.path() + "/uhost/Notes.Txt");
+    if (uh.open(QIODevice::WriteOnly)) { uh.write("notes\r"); uh.close(); }
+    w6->importPaths({uh.fileName()}, dw::fs::Path({"src", "made"}));
+    const int un = w6->document()->uniflex()->find({"src", "made", "Notes.Txt"});
+    CHECK(un >= 0, "Add files into src/made: Notes.Txt, its case kept");
+    CHECK(w6->renameFile(dw::ui::DiscWindow::Item(0, dw::fs::Path({"src", "made", "Notes.Txt"})), "notes", &err) &&
+          w6->document()->uniflex()->find({"src", "made", "notes"}) >= 0, "renamed in its own directory: " + err);
+    CHECK(w6->windowTitle().contains("*"), "the title marks the change: " + w6->windowTitle());
+    CHECK(w6->save() && !w6->windowTitle().contains("*"), "saved");
+    err.clear();
+    auto *fresh = new MainWindow;
+    CHECK(fresh->newImage(work.path() + "/uf-new.dsk", "uniflex-ds-dd", "fresh pack", 3, QString(), &err) && fresh->hasUniflex() &&
+          fresh->document()->uniflex()->sir().packNameText() == "fresh pack" && fresh->document()->uniflex()->sir().number == 3 &&
+          fresh->document()->uniflex()->check().ok() && fresh->writable(0) && QFileInfo(work.path() + "/uf-new.dsk").size() == 2464 * 512,
+          "New disc image, UniFLEX double-sided double density: 2464 blocks, the pack name and number, clean, writable: " + err);
+    delete fresh;
+    auto *again = new MainWindow;
+    CHECK(again->openFile(work.path() + "/uf-basic.dsk") && again->document()->uniflex()->find({"src", "made", "notes"}) >= 0 &&
+          again->document()->uniflex()->check().ok(), "read again: the change is there, the disc checks clean");
+    delete again;
     w6->checkDisc();
     CHECK(w6->document()->disc().validateAll().ok(), "Check disc: clean");
     w6->editProperties();

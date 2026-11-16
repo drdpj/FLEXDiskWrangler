@@ -706,9 +706,11 @@ def writes(flexdw, syn, samples=None):
             else:
                 print('%s: %d steps, the image is FLEX\'s byte for byte after each' % (title, len(steps)))
 
-        # new discs: every shape flexdw makes, against NEWDISK's layout
+        # new discs: every FLEX shape flexdw makes, against NEWDISK's layout (the UniFLEX ones: uniflex_check.py writes)
         code = subprocess.run([flexdw, 'new', '--list', '--json'], capture_output=True, timeout=60, env=env)
         for f in json.loads(code.stdout.decode('utf-8'))['result']['formats']:
+            if f.get('fs', 'flex') != 'flex':
+                continue
             img = os.path.join(tmp, 'new-%s.dsk' % f['id'])
             c = run('new', img, '--format=' + f['id'], '--title=NEWDISC')
             with open(img, 'rb') as fh:

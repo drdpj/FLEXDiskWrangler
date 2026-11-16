@@ -17,7 +17,8 @@
  */
 // voltest - FLEX Disk Wrangler's discs through DiskWranglerCore's filesystem interface: detection by tiers, the
 // FLEX volume as a dw::fs::Disc (listing, reading, attributes, the check), changes made as FLEX makes them, each in a
-// transaction, a faithful reload, Save As, and the sample discs; and UniFLEX discs, read-only (series uniflex-1).
+// transaction, a faithful reload, Save As, and the sample discs; and UniFLEX discs, read (series uniflex-1) and
+// changed (series uniflex-2).
 //   voltest <dir made by flex_check.py make and uniflex_check.py make> [<the sample FLEX discs' folder>
 //           [<the UniFLEX sample discs' folder>]]
 #include <QCoreApplication>
@@ -27,6 +28,8 @@
 #include <QTimeZone>
 #include <cstdio>
 #include <functional>
+
+#include <diskwrangler/app/clock.h>
 
 #include "../src/flextext.h"
 #include "../src/flexvolume.h"
@@ -288,6 +291,14 @@ static void newDiscs(const QString &dir, const QString &work) {
         CHECK(Flex::createBlank(path, p, "NEW", 9, QDate(2026, 11, 15), QByteArray(), &err), p.id + " made: " + err);
         const dw::fs::Verdict vd = verdictOf(path);
         Flex::OpenedDisc od;
+        if (p.fsId == "uniflex") {           // TSC's UniFLEX formats (the bytes are uniflex_check.py writes')
+            dw::fs::Tier tier = dw::fs::Tier::Possible;
+            CHECK(QFileInfo(path).size() == qint64(p.bytes) && openUniflex(path, &od, &err, &tier) && tier == dw::fs::Tier::Certain &&
+                  od.readOnlyWhy(0).isEmpty() && od.uniflex()->sir().packNameText() == "NEW" && od.uniflex()->sir().number == 9 &&
+                  od.uniflex()->check().ok() && od.uniflex()->sir().fdnBlocks == p.bytes / UniFlex::BlockSize / 33,
+                  p.id + ": UniFLEX, certain, writable, pack NEW number 9, clean, a 33rd for fdns: " + err);
+            continue;
+        }
         CHECK(QFileInfo(path).size() == qint64(p.bytes) && vd.bestCandidate() && vd.bestCandidate()->tier == dw::fs::Tier::Certain &&
               openDisc(path, &od, &err) && od.readOnlyWhy(0).isEmpty(), p.id + ": FLEX, certain, writable");
         if (!od.disk()) continue;
@@ -502,6 +513,91 @@ static QByteArray crText(const QStringList &lines) {
 }
 
 // uf-basic.dsk (uniflex_check.py make): the tree, every kind of file, the attributes, the refusals, reload, Save As
+// The whole UniFLEX disc as staged.
+static QByteArray staged(const UniFlex::Fs &fs) {
+    QByteArray b;
+    QString err;
+    fs.linear().read(0, fs.linear().size(), &b, &err);
+    return b;
+}
+
+// Every kind of change on a copy of uf-basic.dsk, each in a transaction: the disc checks clean afterwards and a reload
+// gives exactly the state left; a refused change leaves the staged disc and the state as they were; then the save.
+static void uniflexChanges(Flex::OpenedDisc &od, const QString &path) {
+    using namespace UniFlex;
+    dw::fs::Disc &disc = od.disc();
+    dw::fs::Volume *v = disc.volume(0);
+    const Fs &fs = *od.uniflex();
+    QString err;
+    const QDateTime now(QDate(2026, 11, 16), QTime(12, 0), QTimeZone::utc());
+    dw::setNow(now);
+    const auto change = [&](const QString &what, const std::function<bool(QString *)> &f) {
+        QString e;
+        const bool ok = disc.transact(f, &e);
+        const QString after = describe(fs);
+        QString re;
+        const dw::fs::Report r = v->check();
+        CHECK(ok && r.ok() && v->reload(&re) && describe(fs) == after, what + (ok ? QString() : ": " + e) + r.errors.join("; "));
+    };
+    const auto refused = [&](const QString &what, const QString &want, const std::function<bool(QString *)> &f) {
+        const QByteArray bytes = staged(fs);
+        const QString state = describe(fs);
+        QString e;
+        const bool ok = disc.transact(f, &e);
+        CHECK(!ok && e.contains(want) && staged(fs) == bytes && describe(fs) == state, what + " refused: " + e);
+    };
+    const QByteArray text = QByteArray("a line\r").repeated(100);
+    change("write a file", [&](QString *e) { return v->write(Path(), "new.txt", text, {}, QDateTime(QDate(1984, 1, 1), QTime(0, 0)), false, e); });
+    dw::fs::Entry en;
+    QByteArray back;
+    CHECK(v->stat(Path({"new.txt"}), &en, &err) && en.modified == now && en.attrs.value("ownerRead").toBool() &&
+          en.attrs.value("ownerWrite").toBool() && en.attrs.value("othersRead").toBool() && en.attrs.value("othersWrite").toBool() &&
+          !en.attrs.value("ownerExecute").toBool() &&
+          en.attrs.value("owner").toInt() == 0 && en.attrs.value("links").toInt() == 1,
+          "new.txt: the time of the change (not the file's own), rw-rw- as UniFLEX's shell gives, owner 0, 1 link");
+    CHECK(v->read(Path({"new.txt"}), &back, &err) && back == text, "read back exactly");
+    change("an empty file", [&](QString *e) { return v->write(Path(), "nothing", QByteArray(), {}, QDateTime(), false, e); });
+    change("mkdir", [&](QString *e) { return v->mkdir(Path(), "d", e); });
+    CHECK(v->stat(Path({"d"}), &en, &err) && en.isDir() && en.attrs.value("links").toInt() == 2 && en.attrs.value("ownerWrite").toBool() &&
+          en.attrs.value("othersExecute").toBool(), "d: a directory of 2 links, rwxrwx");
+    change("a file brought with its access and owner",
+           [&](QString *e) { return v->write(Path({"d"}), "prog", QByteArray(6000, 'p'), {{"ownerRead", true}, {"ownerExecute", true}, {"owner", 9}}, QDateTime(), false, e); });
+    CHECK(v->stat(Path({"d", "prog"}), &en, &err) && en.attrs.value("ownerExecute").toBool() && en.attrs.value("owner").toInt() == 9 &&
+          en.size == 6000, "d/prog: its access and owner kept");
+    change("rename in place", [&](QString *e) { return v->rename(Path({"readme"}), Path({"README"}), e); });
+    change("move a file", [&](QString *e) { return v->rename(Path({"new.txt"}), Path({"d", "moved.txt"}), e); });
+    change("rename a directory in place", [&](QString *e) { return v->rename(Path({"d"}), Path({"dir"}), e); });
+    CHECK(v->read(Path({"dir", "moved.txt"}), &back, &err) && back == text, "moved and renamed: still read");
+    change("access and owner", [&](QString *e) { return v->setAttrs(Path({"Prog"}), {{"othersWrite", true}, {"owner", 4}}, e); });
+    CHECK(v->stat(Path({"Prog"}), &en, &err) && en.attrs.value("othersWrite").toBool() && en.attrs.value("owner").toInt() == 4, "Prog: others write, owner 4");
+    change("the SIR's names", [&](QString *e) { return v->setVolumeAttrs({{"label", "packed"}, {"fsName", "fsys"}, {"number", 9}}, e); });
+    CHECK(v->info().title == "packed" && v->volumeValues().value("fsName").toString() == "fsys" && v->volumeValues().value("number").toInt() == 9,
+          "pack packed, file system fsys, number 9");
+    const qint64 freeBefore = fs.sir().freeBlocks;
+    change("remove a tree", [&](QString *e) { return v->remove(Path({"src"}), e); });
+    CHECK(fs.find({"src"}) < 0 && fs.sir().freeBlocks > freeBefore, "src and everything in it gone, its blocks free");
+    change("replace a file", [&](QString *e) { return v->write(Path({"dir"}), "prog", "short", {}, QDateTime(), true, e); });
+    CHECK(v->stat(Path({"dir", "prog"}), &en, &err) && en.size == 5 && en.attrs.value("owner").toInt() == 9 && en.attrs.value("ownerExecute").toBool(),
+          "replaced: the new data, the fdn's access and owner kept");
+    refused("a name that exists", "already exists", [&](QString *e) { return v->write(Path(), "README", "x", {}, QDateTime(), false, e); });
+    refused("a file over a directory", "is a directory", [&](QString *e) { return v->write(Path(), "dir", "x", {}, QDateTime(), true, e); });
+    refused("a name too long", "up to 14", [&](QString *e) { return v->write(Path(), "fifteen_chars.x", "x", {}, QDateTime(), false, e); });
+    change("move a directory", [&](QString *e) { return v->rename(Path({"dir"}), Path({"bin", "dir"}), e); });
+    CHECK(v->read(Path({"bin", "dir", "moved.txt"}), &back, &err) && back == text && v->stat(Path({"bin"}), &en, &err) &&
+          en.attrs.value("links").toInt() == 3, "bin/dir: its files read, bin's links 3 (its own, ., dir's ..)");
+    refused("a directory into itself", "into itself", [&](QString *e) { return v->rename(Path({"bin"}), Path({"bin", "dir", "bin"}), e); });
+    change("move it back", [&](QString *e) { return v->rename(Path({"bin", "dir"}), Path({"dir"}), e); });
+    refused("removing /.badblocks", "bad blocks", [&](QString *e) { return v->remove(Path({".badblocks"}), e); });
+    refused("more than the disc holds", "full", [&](QString *e) { return v->write(Path(), "huge", QByteArray(700 * BlockSize, 'h'), {}, QDateTime(), false, e); });
+    refused("an owner out of range", "0 to 65535", [&](QString *e) { return v->setAttrs(Path({"README"}), {{"owner", 70000}}, e); });
+    // saved, then read again from the file
+    const QString state = describe(fs);
+    CHECK(od.save(false, &err), "saved: " + err);
+    Flex::OpenedDisc again;
+    CHECK(openUniflex(path, &again, &err) && describe(*again.uniflex()) == state && again.disc().volume(0)->check().ok(), "the saved disc reads the same: " + err);
+    dw::setNow(QDateTime());
+}
+
 static void uniflexBasic(const QString &dir, const QString &work) {
     printf("UniFLEX: uf-basic.dsk\n");
     Flex::OpenedDisc od;
@@ -550,24 +646,19 @@ static void uniflexBasic(const QString &dir, const QString &work) {
     CHECK(v->info().title == "basic" && v->volumeValues().value("fsName").toString() == "uniflex" && v->volumeValues().value("number").toInt() == 7,
           "pack basic, file system uniflex, number 7");
 
-    // read-only: every change refused, nothing staged
-    CHECK(od.readOnlyWhy(0) == UniFlex::UniFlexVolume::ReadOnlyText, "read-only: " + od.readOnlyWhy(0));
+    // changes, as UniFLEX makes them (the bytes are uniflex_check.py writes'; here the volume, transactions, reload,
+    // saving). On a copy: the reading checks above and below use uf-basic.dsk as made.
+    CHECK(od.readOnlyWhy(0).isEmpty(), "uf-basic.dsk opens writable: " + od.readOnlyWhy(0));
     const QString before = describe(*od.uniflex());
-    struct Try { const char *what; std::function<bool(QString *)> f; };
-    const Try tries[] = {
-        {"write", [&](QString *e) { return v->write(Path(), "new", "x", {}, QDateTime(), false, e); }},
-        {"mkdir", [&](QString *e) { return v->mkdir(Path(), "d", e); }},
-        {"remove", [&](QString *e) { return v->remove(Path({"readme"}), e); }},
-        {"rename", [&](QString *e) { return v->rename(Path({"readme"}), Path({"other"}), e); }},
-        {"setAttrs", [&](QString *e) { return v->setAttrs(Path({"readme"}), {{"ownerWrite", false}}, e); }},
-        {"setVolumeAttrs", [&](QString *e) { return v->setVolumeAttrs({{"label", "x"}}, e); }},
-    };
-    for (const Try &t : tries) {
-        QString e;
-        CHECK(!od.disc().transact(t.f, &e) && e == UniFlex::UniFlexVolume::ReadOnlyText && !od.dirty(), QString(t.what) + " refused: " + e);
+    {
+        const QString path = work + "/uf-changes.dsk";
+        QFile::remove(path);
+        QFile::copy(dir + "/uf-basic.dsk", path);
+        Flex::OpenedDisc oc;
+        err.clear();
+        CHECK(openUniflex(path, &oc, &err) && oc.readOnlyWhy(0).isEmpty(), "a copy opens writable: " + err);
+        if (oc.uniflex()) uniflexChanges(oc, path);
     }
-    CHECK(!od.save(false, &err), "save refused: " + err);
-    CHECK(od.uniflex()->reload(&err) && describe(*od.uniflex()) == before, "a reload gives the same state");
     // Save As: the same bytes, read back
     const QString copy = work + "/uf-copy.dsk";
     QFile::remove(copy);
@@ -635,7 +726,8 @@ static void uniflexNames() {
     CHECK(n.fromHost("a very long name.txt", dw::fs::NodeKind::File) == "a very long na", "from a host name: " + n.fromHost("a very long name.txt", dw::fs::NodeKind::File));
 }
 
-// Every UniFLEX sample: it opens as UniFLEX, read-only; a reload is faithful; every file that has no problem reads
+// Every UniFLEX sample: it opens as UniFLEX, writable exactly when it is healthy; a reload is faithful; every file
+// that has no problem reads
 static void uniflexSamples(const QString &dir) {
     printf("the UniFLEX sample discs (%s)\n", qPrintable(dir));
     int n = 0;
@@ -654,8 +746,9 @@ static void uniflexSamples(const QString &dir) {
             if (fs.readFile(node, &data, &err) && data.size() == (g->isDevice() ? 0 : g->size)) ++read;
             else ++bad;
         }
-        CHECK(!od.readOnlyWhy(0).isEmpty() && od.uniflex()->reload(&err) && describe(*od.uniflex()) == before && bad == 0,
-              QString("%1: read-only, a faithful reload, %2 files read").arg(f).arg(read));
+        const bool healthy = od.disc().volume(0)->check().ok() && !od.uniflex()->shortImage();
+        CHECK(od.readOnlyWhy(0).isEmpty() == healthy && od.uniflex()->reload(&err) && describe(*od.uniflex()) == before && bad == 0,
+              QString("%1: %2, a faithful reload, %3 files read").arg(f, healthy ? "writable" : "read-only: " + od.readOnlyWhy(0)).arg(read));
     }
     CHECK(n == 37, QString("%1 UniFLEX samples").arg(n));
 }

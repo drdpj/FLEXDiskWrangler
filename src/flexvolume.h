@@ -17,7 +17,7 @@
  */
 // flexvolume.h - FLEX Disk Wrangler on DiskWranglerCore: a FLEX disc as a dw::fs::Volume (FlexVolume), the opened
 // image as the window's Document and the console program's opened image alike (OpenedDisc: a FLEX disc, or a UniFLEX
-// one, read-only, through uniflexvolume.h), detection by tiers (the FLEX and UniFLEX probes, and a recogniser that
+// one, through uniflexvolume.h), detection by tiers (the FLEX and UniFLEX probes, and a recogniser that
 // names the OS-9 discs this program can't open), and who this program is (appInfo, self). QtCore only: the console
 // program uses all of it.
 #pragma once
@@ -92,7 +92,7 @@ struct ProbeResult {
 };
 
 // The opened image: the container and the volume on it, one mount: "FLEX" (group "flex"), or "UniFLEX" (group
-// "uniflex", read-only). It is the window's Document and the console program's opened image alike, so both save
+// "uniflex"). It is the window's Document and the console program's opened image alike, so both save
 // through the same checks.
 class OpenedDisc : public dw::app::Document {
 public:
@@ -106,7 +106,7 @@ public:
     // The window's open: the container opened and its state noted, no reading attached yet.
     bool load(const QString &path, QString *err);
     bool attach(const ProbeResult &r, QString *err);
-    // A UniFLEX disc: the file as 512-byte blocks, read-only.
+    // A UniFLEX disc: the file as 512-byte blocks; read-only when it has errors or is shorter than its volume.
     bool attach(const UniFlex::ProbeResult &r, QString *err);
     bool writableGeometry() const { return m_exact; }
     bool checkOk() const { return m_checkOk; }                       // the disc's check found no errors when it opened
@@ -151,14 +151,19 @@ dw::app::AppInfo appInfo(const QString &version);
 // The presets: the shapes of the sample discs and TSC's formats (the 6809 FLEX Adaptation Guide, Appendix B;
 // docs/disc-format.md), source "flex", each with extra "tracks", "sectors" and "track0" (track 0's sectors: fewer on a
 // double-density disc, whose track 0 is single density). The image is always the full geometry, a short track 0
-// padded as the sample EFORTH's is. addPresets puts them in the core's registry (once); presets() gives them in order.
+// padded as the sample EFORTH's is. Then the UniFLEX ones (fsId "uniflex"): TSC's four 8" floppy formats, extra
+// "density" and "sides" the SIR's flags. addPresets puts them in the core's registry (once); presets() gives them in order.
 void addPresets();
 QVector<dw::fs::Preset> presets();
 const dw::fs::Preset *findPreset(const QString &id);
 // A volume name as stored: up to 8 printable ASCII characters (DISKNAME's rule: what is typed, kept), or why not.
 bool volumeNameBytes(const QString &name, QByteArray *out, QString *err);
+// A UniFLEX pack name: up to 14 characters, Latin-1, no NUL.
+bool uniflexPackBytes(const QString &name, QByteArray *out, QString *err);
 // A blank raw image at path (replacing anything there): the preset's shape laid out as NEWDISK does, the name, number
-// and date in its SIR; with boot (sectors 1 and 2 of another disc, 512 bytes) its loader copied in, not linked.
+// and date in its SIR; with boot (sectors 1 and 2 of another disc, 512 bytes) its loader copied in, not linked. A
+// UniFLEX preset: laid out as TSC's formatter does (UniFlex::formatDisc), name the pack name, number the file system
+// number, the time now (the core's clock); no boot.
 bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
                  const QByteArray &boot, QString *err);
 // The boot loader of another FLEX disc image (sectors 1 and 2): refused if it isn't a FLEX disc or sector 1 is empty.

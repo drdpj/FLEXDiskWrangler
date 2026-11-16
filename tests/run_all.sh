@@ -4,8 +4,9 @@
 # Builds the program, flexdw and every test (the core's too), makes the synthetic discs (flex_check.py make and
 # uniflex_check.py make), and runs: the core's tests, voltest, the GUI test, flexdw's golden cases, the independent
 # FLEX and UniFLEX readers against flexdw on every synthetic disc and (given the folders) every sample disc, flexdw's
-# changes against the independent model of how FLEX writes (flex_check.py writes), and the check that flexdw links no
-# Qt GUI library.
+# changes against the independent model of how FLEX writes (flex_check.py writes), its UniFLEX changes and new discs
+# against the independent model of how UniFLEX writes (uniflex_check.py writes), and the check that flexdw links no Qt
+# GUI library.
 # Ends "ALL PASSED" or "SOME TESTS FAILED"; exit status 0 only if everything passed.
 src=$(cd "$(dirname "$0")/.." && pwd)
 b=${1:?usage: run_all.sh <build dir> [<sample FLEX discs> [<sample UniFLEX discs>]]}; real=$2; ufreal=$3
@@ -75,6 +76,10 @@ fi
 step "flexdw's changes against the independent model of how FLEX writes (flex_check.py writes)${real:+, the sample system discs too}"
 timeout 900 python3 -I "$src/tests/flex_check.py" writes "$b/flexdw/flexdw" "$W/syn" ${real:+"$W/real"} > "$W/writes.log" 2>&1 || fail=1
 cat "$W/writes.log"
+
+step "flexdw's UniFLEX changes and new discs against the independent model of how UniFLEX writes (uniflex_check.py writes)${ufreal:+, healthy UniFLEX samples too}"
+timeout 1800 python3 -I "$src/tests/uniflex_check.py" writes "$b/flexdw/flexdw" "$W/syn" ${ufreal:+"$W/ufreal"} > "$W/uf-writes.log" 2>&1 || fail=1
+cat "$W/uf-writes.log"
 
 rm -rf "$W"
 echo; [ $fail -eq 0 ] && echo "ALL PASSED" || echo "SOME TESTS FAILED"

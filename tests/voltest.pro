@@ -4,6 +4,6 @@ QT -= gui
 CONFIG += c++17 console
 CONFIG -= app_bundle
 TARGET = voltest
-SOURCES += voltest.cpp ../src/flexdisk.cpp ../src/flexvolume.cpp ../src/uniflexfs.cpp ../src/uniflexvolume.cpp ../src/flextext.cpp
-HEADERS += ../src/flexdisk.h ../src/flexvolume.h ../src/uniflexfs.h ../src/uniflexvolume.h ../src/flextext.h
+SOURCES += voltest.cpp ../src/flexdisk.cpp ../src/flexvolume.cpp ../src/uniflexfs.cpp ../src/uniflexvolume.cpp ../src/uniflexwrite.cpp ../src/flextext.cpp
+HEADERS += ../src/flexdisk.h ../src/flexvolume.h ../src/uniflexfs.h ../src/uniflexvolume.h ../src/uniflexwrite.h ../src/flextext.h
 !include(../core/diskwranglercore.pri): error("core/ is empty: run 'git submodule update --init'")
