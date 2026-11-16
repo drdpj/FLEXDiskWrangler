@@ -1,0 +1,132 @@
+{
+    "changes": [
+    ],
+    "command": "ls",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "entries": [
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 8,
+                    "links": 2,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "directory"
+                },
+                "created": null,
+                "display": "/src/sub",
+                "kind": "dir",
+                "modified": "1985-04-25T19:22:40",
+                "name": "sub",
+                "path": [
+                    "src",
+                    "sub"
+                ],
+                "problem": null,
+                "size": 0,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 9,
+                    "links": 2,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 1,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/src/also.c",
+                "kind": "file",
+                "modified": "1985-04-25T19:26:40",
+                "name": "also.c",
+                "path": [
+                    "src",
+                    "also.c"
+                ],
+                "problem": null,
+                "size": 30,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 10,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/src/holey",
+                "kind": "file",
+                "modified": "1985-04-25T19:27:40",
+                "name": "holey",
+                "path": [
+                    "src",
+                    "holey"
+                ],
+                "problem": null,
+                "size": 1636,
+                "sizeExact": true
+            },
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 11,
+                    "links": 1,
+                    "othersExecute": false,
+                    "othersRead": true,
+                    "othersWrite": true,
+                    "owner": 0,
+                    "ownerExecute": false,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/src/big.dat",
+                "kind": "file",
+                "modified": "1985-04-25T19:28:40",
+                "name": "big.dat",
+                "path": [
+                    "src",
+                    "big.dat"
+                ],
+                "problem": null,
+                "size": 81953,
+                "sizeExact": true
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

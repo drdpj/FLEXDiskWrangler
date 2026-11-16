@@ -1,0 +1,18 @@
+# a UniFLEX disc, read-only (series uniflex-1): what it is, its tree, its files out, and every change refused
+$TOOL info img.dsk --json
+$TOOL check img.dsk --json
+$TOOL ls img.dsk -R --json
+$TOOL ls img.dsk -R
+$TOOL ls img.dsk /src --json
+$TOOL get img.dsk / out --json
+$TOOL get img.dsk /src/sub/deep.c out/one --json
+$TOOL attr img.dsk /Prog --json
+$TOOL put img.dsk host/note.txt / --json
+$TOOL rm img.dsk /readme --json
+$TOOL mv img.dsk /readme /other --json
+$TOOL attr img.dsk /readme --set ownerWrite=false --json
+$TOOL title img.dsk NEW --json
+$TOOL check img-bad.dsk --json
+$TOOL get img-bad.dsk /src/big.dat out/bad --json
+$TOOL check img-odd.dsk --json
+$TOOL ls img-odd.dsk --json

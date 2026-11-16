@@ -1,0 +1,34 @@
+{
+    "changes": [
+        {
+            "from": "deep.c",
+            "note": null,
+            "op": "add",
+            "path": "deep.c",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "get",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "manifest": null,
+        "written": [
+            {
+                "from": "deep.c",
+                "host": "deep.c",
+                "sidecar": false,
+                "size": 30
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

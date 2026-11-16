@@ -1,0 +1,257 @@
+{
+    "changes": [
+    ],
+    "command": "info",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "app": {
+            "created": "1985-04-25T19:22:40+00:00",
+            "density": 1,
+            "directories": 5,
+            "exactSize": true,
+            "fdnBlocks": 4,
+            "fdns": 32,
+            "files": 12,
+            "freeBlocks": 417,
+            "freeFdns": 16,
+            "fsName": "uniflex",
+            "fsNumber": 7,
+            "imageBlocks": 616,
+            "packName": "basic",
+            "sides": 1,
+            "swapBlocks": 16,
+            "swapStart": 600,
+            "updated": "1985-04-25T19:22:40+00:00",
+            "volumeBlocks": 600,
+            "winchester": false
+        },
+        "candidates": [
+            {
+                "description": "UniFLEX disc basic, 600 blocks",
+                "evidence": [
+                    "block 1 is a UniFLEX SIR: 4 fdn blocks, a volume of 600 blocks",
+                    "fdn 1 is the root directory",
+                    "which with 16 blocks of swap space is exactly the file's size"
+                ],
+                "fsId": "uniflex",
+                "name": "UniFLEX",
+                "notes": [
+                ],
+                "probe": "uniflex",
+                "safeToWrite": false,
+                "supported": true,
+                "tier": "certain"
+            }
+        ],
+        "chosen": {
+            "description": "UniFLEX disc basic, 600 blocks",
+            "evidence": [
+                "block 1 is a UniFLEX SIR: 4 fdn blocks, a volume of 600 blocks",
+                "fdn 1 is the root directory",
+                "which with 16 blocks of swap space is exactly the file's size"
+            ],
+            "fsId": "uniflex",
+            "name": "UniFLEX",
+            "notes": [
+            ],
+            "probe": "uniflex",
+            "safeToWrite": false,
+            "supported": true,
+            "tier": "certain"
+        },
+        "container": {
+            "kind": "raw",
+            "name": "raw sector image",
+            "readOnly": false,
+            "size": 315392
+        },
+        "owner": null,
+        "verdict": "open",
+        "volumes": [
+            {
+                "caps": {
+                    "contiguousOnly": false,
+                    "dates": true,
+                    "dirs": true,
+                    "maxEntriesPerDir": -1,
+                    "namespaces": false,
+                    "rename": false,
+                    "renameAcrossDirs": false,
+                    "settableDates": false,
+                    "title": true
+                },
+                "fileAttrSpecs": [
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "ownerRead",
+                        "label": "Owner read",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "ownerWrite",
+                        "label": "Owner write",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "ownerExecute",
+                        "label": "Owner execute",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "othersRead",
+                        "label": "Others read",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "othersWrite",
+                        "label": "Others write",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "othersExecute",
+                        "label": "Others execute",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "setUserId",
+                        "label": "Set user id on execution",
+                        "type": "bool"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": true,
+                        "key": "owner",
+                        "label": "Owner",
+                        "type": "int"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": false,
+                        "key": "links",
+                        "label": "Links",
+                        "type": "int"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": false,
+                        "key": "fdn",
+                        "label": "Fdn",
+                        "type": "int"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": true,
+                        "editable": false,
+                        "key": "type",
+                        "label": "Type",
+                        "type": "text"
+                    }
+                ],
+                "fsId": "uniflex",
+                "info": {
+                    "entriesFree": -1,
+                    "free": 213504,
+                    "largestFree": -1,
+                    "title": "basic",
+                    "total": 304128
+                },
+                "label": "UniFLEX",
+                "readOnly": true,
+                "readOnlyWhy": "UniFLEX discs are read-only in this version of FLEX Disk Wrangler",
+                "vol": "uniflex",
+                "volumeAttrSpecs": [
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "label",
+                        "label": "Pack name",
+                        "type": "text"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "fsName",
+                        "label": "File system name",
+                        "type": "text"
+                    },
+                    {
+                        "bits": 32,
+                        "choices": [
+                        ],
+                        "dirs": false,
+                        "editable": false,
+                        "key": "number",
+                        "label": "File system number",
+                        "type": "int"
+                    }
+                ],
+                "volumeAttrs": {
+                    "fsName": "uniflex",
+                    "label": "basic",
+                    "number": 7
+                }
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

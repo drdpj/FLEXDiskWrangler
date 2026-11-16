@@ -1,0 +1,25 @@
+{
+    "changes": [
+    ],
+    "command": "check",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "errors": [
+        ],
+        "info": [
+            "12 files and 5 directories; 417 of 600 blocks free; 16 of 32 fdns free"
+        ],
+        "warnings": [
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": null,
+    "warnings": [
+    ]
+}

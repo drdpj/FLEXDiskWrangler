@@ -1,0 +1,17 @@
+uniflex: UniFLEX "basic", 90624 used, 213504 free, read-only
+/.badblocks                      0  1985-04-25 19:22
+/bin             D  rxRX            1985-04-25 19:22
+/bin/hello          rxRXs      150  1985-04-25 19:25
+/dev             D  rwxRWX          1985-04-25 19:22
+/dev/fd0            rwR          0  1985-04-25 19:22
+/dev/tty0           rwR          0  1985-04-25 19:22
+/empty              rwRW         0  1985-04-25 19:30
+/fourteen_chars     rwRW         2  1985-04-25 19:29
+/Prog               rwxRX      768  1985-04-25 19:24
+/readme             rwRW        49  1985-04-25 19:23
+/src             D  rwxRWX          1985-04-25 19:22
+/src/also.c         rwRW        30  1985-04-25 19:26
+/src/big.dat        rwRW     81953  1985-04-25 19:28
+/src/holey          rwRW      1636  1985-04-25 19:27
+/src/sub         D  rwxRWX          1985-04-25 19:22
+/src/sub/deep.c     rwRW        30  1985-04-25 19:26

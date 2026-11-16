@@ -6,7 +6,7 @@
     "error": {
         "code": 6,
         "kind": "unsupported",
-        "message": "this is a UniFLEX disc (\"uniflex\"): FLEX Disk Wrangler can't open it",
+        "message": "this is what looks like a UniFLEX disc (\"uniflex\"), but the SIR gives no fdn list: FLEX Disk Wrangler can't open it",
         "path": null
     },
     "exit": 6,
@@ -16,7 +16,7 @@
         "app": null,
         "candidates": [
             {
-                "description": "a UniFLEX disc (\"uniflex\")",
+                "description": "what looks like a UniFLEX disc (\"uniflex\"), but the SIR gives no fdn list",
                 "evidence": [
                     "block 1 names a UniFLEX file system and pack"
                 ],
@@ -24,14 +24,14 @@
                 "name": "UniFLEX",
                 "notes": [
                 ],
-                "probe": "other",
+                "probe": "uniflex",
                 "safeToWrite": true,
                 "supported": false,
                 "tier": "possible"
             }
         ],
         "chosen": {
-            "description": "a UniFLEX disc (\"uniflex\")",
+            "description": "what looks like a UniFLEX disc (\"uniflex\"), but the SIR gives no fdn list",
             "evidence": [
                 "block 1 names a UniFLEX file system and pack"
             ],
@@ -39,7 +39,7 @@
             "name": "UniFLEX",
             "notes": [
             ],
-            "probe": "other",
+            "probe": "uniflex",
             "safeToWrite": true,
             "supported": false,
             "tier": "possible"

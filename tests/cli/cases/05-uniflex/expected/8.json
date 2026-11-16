@@ -1,0 +1,47 @@
+{
+    "changes": [
+    ],
+    "command": "attr",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "entries": [
+            {
+                "accessed": null,
+                "attrs": {
+                    "fdn": 4,
+                    "links": 1,
+                    "othersExecute": true,
+                    "othersRead": true,
+                    "othersWrite": false,
+                    "owner": 3,
+                    "ownerExecute": true,
+                    "ownerRead": true,
+                    "ownerWrite": true,
+                    "setUserId": false,
+                    "type": "file"
+                },
+                "created": null,
+                "display": "/Prog",
+                "kind": "file",
+                "modified": "1985-04-25T19:24:40",
+                "name": "Prog",
+                "path": [
+                    "Prog"
+                ],
+                "problem": null,
+                "size": 768,
+                "sizeExact": true
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}

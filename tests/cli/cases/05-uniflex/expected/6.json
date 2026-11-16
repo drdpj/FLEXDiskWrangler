@@ -1,0 +1,177 @@
+{
+    "changes": [
+        {
+            "from": ".badblocks",
+            "note": null,
+            "op": "add",
+            "path": ".badblocks",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "Prog",
+            "note": null,
+            "op": "add",
+            "path": "Prog",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "hello",
+            "note": null,
+            "op": "add",
+            "path": "bin/hello",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "fd0",
+            "note": null,
+            "op": "add",
+            "path": "dev/fd0",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "tty0",
+            "note": null,
+            "op": "add",
+            "path": "dev/tty0",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "empty",
+            "note": null,
+            "op": "add",
+            "path": "empty",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "fourteen_chars",
+            "note": null,
+            "op": "add",
+            "path": "fourteen_chars",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "readme",
+            "note": null,
+            "op": "add",
+            "path": "readme",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "also.c",
+            "note": null,
+            "op": "add",
+            "path": "src/also.c",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "big.dat",
+            "note": null,
+            "op": "add",
+            "path": "src/big.dat",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "holey",
+            "note": null,
+            "op": "add",
+            "path": "src/holey",
+            "vol": "UniFLEX"
+        },
+        {
+            "from": "deep.c",
+            "note": null,
+            "op": "add",
+            "path": "src/sub/deep.c",
+            "vol": "UniFLEX"
+        }
+    ],
+    "command": "get",
+    "dryRun": false,
+    "error": null,
+    "exit": 0,
+    "image": "img.dsk",
+    "ok": true,
+    "result": {
+        "manifest": null,
+        "written": [
+            {
+                "from": ".badblocks",
+                "host": ".badblocks",
+                "sidecar": false,
+                "size": 0
+            },
+            {
+                "from": "Prog",
+                "host": "Prog",
+                "sidecar": false,
+                "size": 768
+            },
+            {
+                "from": "hello",
+                "host": "bin/hello",
+                "sidecar": false,
+                "size": 150
+            },
+            {
+                "from": "fd0",
+                "host": "dev/fd0",
+                "sidecar": false,
+                "size": 0
+            },
+            {
+                "from": "tty0",
+                "host": "dev/tty0",
+                "sidecar": false,
+                "size": 0
+            },
+            {
+                "from": "empty",
+                "host": "empty",
+                "sidecar": false,
+                "size": 0
+            },
+            {
+                "from": "fourteen_chars",
+                "host": "fourteen_chars",
+                "sidecar": false,
+                "size": 2
+            },
+            {
+                "from": "readme",
+                "host": "readme",
+                "sidecar": false,
+                "size": 49
+            },
+            {
+                "from": "also.c",
+                "host": "src/also.c",
+                "sidecar": false,
+                "size": 30
+            },
+            {
+                "from": "big.dat",
+                "host": "src/big.dat",
+                "sidecar": false,
+                "size": 81953
+            },
+            {
+                "from": "holey",
+                "host": "src/holey",
+                "sidecar": false,
+                "size": 1636
+            },
+            {
+                "from": "deep.c",
+                "host": "src/sub/deep.c",
+                "sidecar": false,
+                "size": 30
+            }
+        ]
+    },
+    "saved": false,
+    "schema": 1,
+    "tool": "flexdw",
+    "vol": "UniFLEX",
+    "warnings": [
+    ]
+}
