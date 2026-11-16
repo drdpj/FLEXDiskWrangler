@@ -1,3 +1,5 @@
+[![Latest release](https://img.shields.io/github/v/release/drdpj/FLEXDiskWrangler?include_prereleases&label=release)](https://github.com/drdpj/FLEXDiskWrangler/releases)
+
 # FLEX Disk Wrangler
 
 Work with disc images of **TSC FLEX**, the disc operating system of 6800 (FLEX 2) and 6809 (FLEX 9) computers such as
@@ -13,6 +15,26 @@ grows, what deleting leaves, the sector map of a random-access file, the System 
 and how a new disc is laid out were all read from FLEX itself (FLEX 2.0 and three FLEX 9s, on the sample discs), so a
 disc changed here is the disc FLEX would have made. A disc is checked before every save, and the saved copy is read
 back and checked before it replaces the original.
+
+## Download
+Get the latest build from the [Releases page](https://github.com/drdpj/FLEXDiskWrangler/releases). The releases so
+far are release candidates, ahead of 1.0.0.
+None of the builds are signed, so your system may warn you the first time you run it.
+
+* **Windows** (10 or later, 64-bit): run the `...-setup.exe` installer (it installs into Program Files; without
+  administrator rights, choose to install it just for you), or unzip the `.zip` anywhere and run
+  `flexdiskwrangler.exe`. If Windows warns you, choose **More info**, then **Run anyway**.
+* **macOS** (12 or later, Intel or Apple Silicon): open the `.dmg` and drag the app to Applications. The first time,
+  right-click it and choose **Open**.
+* **Linux** (x86_64):
+  * **Ubuntu 22.04+ or Debian 12+:** `sudo apt install ./flexdiskwrangler-<version>-linux-amd64.deb` (the `./`
+    matters). It uses the system's Qt and adds the program to the applications menu. Remove it with
+    `sudo apt remove flexdiskwrangler`.
+  * **Any other distribution:** make the `.AppImage` executable (`chmod +x`) and run it. It doesn't add itself to
+    the applications menu, so docks show a generic icon unless a tool such as Gear Lever or AppImageLauncher
+    integrates it.
+
+Help > About shows the version; Help > Licences shows the licences of the program and everything shipped with it.
 
 ## What it opens
 | Image | |
@@ -32,8 +54,9 @@ Record gives opens read-only too.
   FLEX, a write-, delete- or read-protected file can't be deleted, renamed or replaced: take the protection off in
   Properties first.
 * **Volume name**: the name (up to 8 characters) and number in the System Information Record.
-* **New disc image**: the shapes of real FLEX discs (35 or 40 tracks of 10, 18, 20 or 36 sectors, and 8-inch 77 x 15),
-  laid out as FLEX's NEWDISK lays a disc out.
+* **New disc image**: TSC's formats and the shapes of real FLEX discs (5¼-inch 35 x 10, 35 x 18, 35 x 20, 40 x 10,
+  40 x 20 and 40 x 36; 8-inch 77 x 15, 77 x 26, 77 x 30 and 77 x 52), laid out as FLEX's NEWDISK lays a disc out. On a
+  double-density disc whose track 0 is single density, the image pads track 0 to a full track, as emulators expect.
 * **The boot loader.** FLEX's boot loader is TSC's own code, so the program carries none: a new disc works under FLEX
   but doesn't start it. To make a disc that starts FLEX, copy the loader from a FLEX system disc you have (New disc
   image, or Tools > Copy boot loader from), put FLEX.SYS on the disc, and link the loader to it (Tools > Link boot
