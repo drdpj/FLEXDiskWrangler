@@ -2,3 +2,4 @@ python3 -I "$TESTS/flex_check.py" make syn
 cp syn/basic.dsk img.dsk; cp syn/frag.dsk img-frag.dsk; cp syn/random.dsk img-random.dsk
 mkdir -p host; : > host/EMPTY.TXT; printf 'x\r' > host/README.TXT
 head -c 100000 /dev/zero > host/big.bin
+touch -d '2000-01-01 00:00:00' host/*      # made here, after the runner dates its fixtures: the same date every run
