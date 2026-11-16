@@ -33,6 +33,18 @@ How FLEX writes was settled from FLEX itself, disassembled from the sample discs
   files lie in order near the end of its own.
 * FLEX2_A and FLEX2_B are FLEX 2 utility discs with no DOS on them (their boot sector's link is 0/1, not linked).
 
+**FLEX 2.0 running** (16 Nov 2026): TSC FLEX 2.0, booted from FL2_0SWT in Open SIMH's SWTPC 6800 emulator, changed a
+disc of every new-disc shape the program makes (copying two files on, renaming one, deleting the other), and left each
+image byte for byte as the program's model of the FMS (`tests/flex_check.py`, `Fms`) says. Its COPY dated the copies
+the day it ran, not the source's date. (The scripts are in the workspace, `design/test-scripts/flex-simh`: they need
+the owner's TSC disc and ROM, so they aren't in this repository.)
+
+**FLEX 9.1 running** (16 Nov 2026): FLEX 9.1, flexemu's own system disc in flexemu, did the same to every new-disc
+shape, copying a random-access file as well, and left each image byte for byte as the model says, but for one thing:
+it writes a copy of the SIR, as it stands when a file is opened for writing, into track 0 sector 4. TSC FLEX 2.0 and
+the FLEX 9s read in series flex-2 never touch sector 4, and nothing reads that copy back, so the program leaves
+sector 4 as it is. Its COPY kept the source files' dates. (Scripts: `design/test-scripts/flexemu`.)
+
 **The Guide** (16 Nov 2026): TSC's *6809 FLEX Adaptation Guide* (the FLEX User's Group's copy), for whoever fits FLEX
 to new hardware: the disc format (section 2.3), NEWDISK and the SIR (section 9, with the skeletal NEWDISK of
 Appendix F), sector interleave (9.4), the boot loader and LINK (8.3), and TSC's disc formats (Appendix B). It agrees
@@ -104,7 +116,8 @@ bytes 2-3 a record number; bytes 4-255 data (252 bytes).
   sector, `$21-$22` free sector count, `$23-$25` the date the disc was made (month, day, year), `$26` the highest
   track number, `$27` sectors per track (on a double-density disc, the tracks after track 0). **Seen** on all 17
   discs; **FLEX** (NEWDISK, GIMIX FORMAT); **the Guide** (9.1.5) gives the same offsets.
-* Sector 4: unused; it keeps NEWDISK's link 0/5 (**seen** on every sample but C009).
+* Sector 4: unused; it keeps NEWDISK's link 0/5 (**seen** on every sample but C009). **Seen**: flexemu's FLEX 9.1
+  writes a copy of the SIR there (above, "FLEX 9.1 running"); flexemu's `system.dsk` has one.
 * Sectors 5 onwards: the **directory**, a chain of sectors linked as above.
 
 ### The volume name
@@ -231,8 +244,10 @@ the old one); nothing else changes, not the date.
 FLEX leaves these to whoever writes the disc, or does something the program can't:
 
 * **An empty host file is refused** ("FLEX can't hold an empty file"): FLEX itself never keeps one.
-* **A file copied in keeps its date and its four protection bits**, as FLEX's COPY does (it copies byte 11 and the date
-  into the new file's FCB); with no date, today's. A random-access file stays random-access, with a new map.
+* **A file copied in keeps its date and its four protection bits**, as FLEX 9's COPY does (it copies byte 11 and the
+  date into the new file's FCB); with no date, today's. A random-access file stays random-access, with a new map.
+  **Seen**: TSC FLEX 2.0's COPY gives the copy **today's date** instead, and FLEX 9.1's keeps the source's (both run
+  in emulators, below); the program follows FLEX 9.
 * **Rename takes the name given**, extension and all (FLEX's RENAME keeps the old extension when the new name has
   none; that is the command's, not the disc's). A write-, delete- or read-protected file is not renamed, deleted or
   replaced, as in the FMS; Properties takes the protection off first. The random-access flag can't be changed.
