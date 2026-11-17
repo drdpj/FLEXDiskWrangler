@@ -42,7 +42,7 @@
                 "notes": [
                 ],
                 "probe": "uniflex",
-                "safeToWrite": false,
+                "safeToWrite": true,
                 "supported": true,
                 "tier": "certain"
             }
@@ -59,7 +59,7 @@
             "notes": [
             ],
             "probe": "uniflex",
-            "safeToWrite": false,
+            "safeToWrite": true,
             "supported": true,
             "tier": "certain"
         },
