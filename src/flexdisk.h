@@ -95,7 +95,8 @@ const int MaxMapRuns = 2 * MapRunsPerSector; // FLEX's error 23 ("file sector ma
 const int VolumeNameLength = 8;              // SIR $10-$17; $18-$1A (NEWDISK's "extension", a formatter's tag) is kept
 const int BootLinkOffset = 5;                // FLEX's LINK writes the system file's first sector at sector 1, bytes 5-6
 
-// A FLEX date as stored (M, D, Y; the year is the last two digits). Years before 70 are taken as 20xx.
+// A FLEX date as stored (M, D, Y; the year is the last two digits). Years before 70 are taken as 20xx; 100 and up
+// as years since 1900 (as the BBC Micro's FLEX discs keep them: 117 is 2017).
 QDate flexDate(int month, int day, int year);
 
 struct File {

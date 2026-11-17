@@ -36,7 +36,8 @@ QString Sir::labelText() const {
 }
 
 QDate flexDate(int month, int day, int year) {
-    if (month < 1 || month > 12 || day < 1 || day > 31 || year > 99) return QDate();
+    if (month < 1 || month > 12 || day < 1 || day > 31 || year < 0 || year > 255) return QDate();
+    // two digits (before 70: 20xx), or years since 1900 (100 and up: the BBC Micro's FLEX discs keep 117 for 2017)
     return QDate(year < 70 ? 2000 + year : 1900 + year, month, day);    // invalid if the day isn't in the month
 }
 

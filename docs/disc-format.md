@@ -175,7 +175,7 @@ Each directory sector: 16 bytes of header (the link, the record number, then zer
 | 17-18 | number of sectors, a random file's map included |
 | 19 | random-access flag: 0 sequential; FLEX writes 2 for a random file and tests only non-zero |
 | 20 | reserved: 0 in a new entry, kept otherwise |
-| 21-23 | date: month, day, year (two digits; years before 70 are read as 20xx) |
+| 21-23 | date: month, day, year (two digits; years before 70 are read as 20xx; 100 and up as years since 1900, as the BBC Micro's FLEX discs keep them: 117 is 2017) |
 
 * A first byte of 0: a slot never used. A first byte with bit 7 set: a deleted file (**FLEX** writes `$FF` there and
   keeps the rest of the entry).

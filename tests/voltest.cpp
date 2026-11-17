@@ -544,7 +544,23 @@ static void samples(const QString &dir) {
               f + ": ADDED.TXT added, " + victim + " deleted, saved and read back: " + err);
         QFile::remove(copy);
     }
-    CHECK(flex == 17, QString("%1 FLEX discs").arg(flex));
+    CHECK(flex == 19, QString("%1 FLEX discs").arg(flex));
+    // the BBC Micro's FLEX discs keep the year as years since 1900 (117: 2017), in the SIR and in every entry; no date
+    // warning. GOSDC has one warning of its own: sectors lost from the free chain (flex.md, the sample discs)
+    struct Bbc { QString file; QDate date; QStringList warnings; };
+    for (const Bbc &bbc : {Bbc{"BBCFLEX_DC.dsd", QDate(2017, 2, 21), {}},
+                           Bbc{"BBCFLEX_GOSDC.ssd", QDate(2017, 10, 6), {"82 sectors after track 0 belong to no file and aren't free"}}}) {
+        Flex::OpenedDisc od;
+        QString err;
+        if (!QFile::exists(dir + "/" + bbc.file)) { CHECK(false, bbc.file + " is in the sample folder"); continue; }
+        CHECK(openDisc(dir + "/" + bbc.file, &od, &err) && od.disk(), bbc.file + ": opened: " + err);
+        if (!od.disk()) continue;
+        bool dated = !od.disk()->files().isEmpty();
+        for (const Flex::File &f : od.disk()->files()) dated = dated && f.date() == bbc.date;
+        const QStringList w = od.disc().volume(0)->check().warnings;
+        CHECK(dated && od.disk()->sir().date() == bbc.date && w == bbc.warnings,
+              bbc.file + ": every file and the SIR dated " + bbc.date.toString(Qt::ISODate) + "; warnings: " + w.join("; "));
+    }
 }
 
 // ------------------------------------------------------------------------------------------------ UniFLEX
