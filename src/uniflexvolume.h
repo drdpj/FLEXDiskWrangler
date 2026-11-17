@@ -34,7 +34,7 @@ public:
     Qt::CaseSensitivity caseSensitivity() const override { return Qt::CaseSensitive; }
 };
 
-// The tree from the root. Attributes: the seven access bits (retro-files family "uniflex", docs/retro-files-uniflex.md)
+// The tree from the root. Attributes: the seven access bits (retro-files family "uniflex", the core's docs/retro-files-format.md)
 // and the owner's user id travel with a file; the type (a device's numbers), links and fdn number are shown. The
 // date is the fdn's time of last change. Volume attributes: the pack name, the file system name and number. Changes
 // are made as UniFLEX makes them (uniflexwrite.h); a file brought in gets the time of the change, as UniFLEX's copy

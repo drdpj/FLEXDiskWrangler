@@ -47,7 +47,7 @@ public:
 };
 
 // One flat directory. Attributes: the four protection bits and the random-access flag (retro-files family "flex",
-// docs/retro-files-flex.md) and the size in sectors; the date is the entry's modified date. Volume attributes: the
+// the core's docs/retro-files-format.md) and the size in sectors; the date is the entry's modified date. Volume attributes: the
 // label and the volume number. Changes are FLEX's (Flex::Disk): a file written keeps the date and protection it brings
 // (as FLEX's COPY does), today's date when it brings none; the random-access flag comes with a file and can't be
 // changed afterwards (it decides whether the file has a map); a protected file can't be deleted, renamed or replaced.
