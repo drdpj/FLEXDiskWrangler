@@ -98,7 +98,7 @@ dw::fs::Caps UniFlexVolume::caps() const {
     dw::fs::Caps c;
     c.dirs = true;
     c.rename = true;
-    c.renameAcrossDirs = true;           // files only: a directory stays in its directory (uniflexwrite.h)
+    c.renameAcrossDirs = true;           // files and directories (a directory moved: its .. rewritten, uniflexwrite.h)
     c.title = true;
     c.dates = true;
     c.settableDates = false;

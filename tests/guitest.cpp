@@ -25,6 +25,7 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QDir>
+#include <QDragMoveEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QMenuBar>
@@ -310,6 +311,78 @@ int main(int argc, char **argv) {
     CHECK(un >= 0, "Add files into src/made: Notes.Txt, its case kept");
     CHECK(w6->renameFile(dw::ui::DiscWindow::Item(0, dw::fs::Path({"src", "made", "Notes.Txt"})), "notes", &err) &&
           w6->document()->uniflex()->find({"src", "made", "notes"}) >= 0, "renamed in its own directory: " + err);
+    // dragging within the tree moves: a top-level directory dropped on another goes into it, once, not copied into itself
+    {
+        auto *fp = qobject_cast<FlexPane *>(up);
+        QTreeWidgetItem *root = up->topLevelItem(0);
+        QTreeWidgetItem *binRow = childNamed(root, "bin"), *srcRow = childNamed(root, "src");
+        CHECK(fp && binRow && srcRow, "rows for bin and src");
+        if (fp && binRow && srcRow) {
+            up->clearSelection();
+            binRow->setSelected(true);
+            up->setCurrentItem(binRow);                  // the row dragged is the current one, as in a real drag
+            QMimeData *md = fp->makeMime({binRow});
+            CHECK(md && md->hasFormat(DW_MIME_ITEMS) && dw::ui::VolumePane::fromThisProcess(md), "the drag names its items and this window");
+            if (md) emit up->internalDrop(md->data(DW_MIME_ITEMS), srcRow);
+            delete md;
+            QApplication::processEvents();
+            const UniFlex::Fs *ufs = w6->document()->uniflex();
+            CHECK(ufs->find({"src", "bin", "hello"}) >= 0 && ufs->find({"bin"}) < 0 && ufs->find({"bin", "bin"}) < 0 &&
+                  ufs->find({"src", "bin", "bin"}) < 0 && ufs->check().ok(),
+                  "/bin dropped on /src: moved to /src/bin, nothing copied, the disc clean: " + w6->statusBar()->currentMessage());
+        }
+        int moved = 0;
+        CHECK(!w6->moveItems({dw::ui::DiscWindow::Item(0, dw::fs::Path({"src"}))}, dw::fs::Path({"src", "bin"}), &moved, &err) &&
+              err.contains("into itself") && w6->document()->uniflex()->find({"src", "bin"}) >= 0, "a directory into one inside it: refused: " + err);
+        err.clear();
+        CHECK(w6->moveItems({dw::ui::DiscWindow::Item(0, dw::fs::Path({"src", "bin", "hello"}))}, dw::fs::Path(), &moved, &err) && moved == 1 &&
+              w6->document()->uniflex()->find({"hello"}) >= 0, "a file to the root: " + err);
+        CHECK(w6->moveItems({dw::ui::DiscWindow::Item(0, dw::fs::Path({"readme"}))}, dw::fs::Path(), &moved, &err) && moved == 0,
+              "already there: nothing moved: " + err);
+        QFile clash(work.path() + "/uhost/readme");
+        if (clash.open(QIODevice::WriteOnly)) { clash.write("other\r"); clash.close(); }
+        w6->importPaths({clash.fileName()}, dw::fs::Path({"src"}));
+        err.clear();
+        CHECK(!w6->moveItems({dw::ui::DiscWindow::Item(0, dw::fs::Path({"src", "readme"}))}, dw::fs::Path(), &moved, &err) &&
+              err.contains("already has") && w6->document()->uniflex()->find({"src", "readme"}) >= 0, "a name the directory has: refused, never replaced: " + err);
+        err.clear();
+        // a drop below the rows goes to the root, not to the selected row (the one being dragged)
+        QTreeWidgetItem *sub = childNamed(childNamed(up->topLevelItem(0), "src"), "sub");
+        if (sub) {
+            up->setCurrentItem(sub);
+            QMimeData *md = fp->makeMime({sub});
+            if (md) emit up->internalDrop(md->data(DW_MIME_ITEMS), nullptr);
+            delete md;
+            QApplication::processEvents();
+        }
+        CHECK(w6->document()->uniflex()->find({"sub", "deep.c"}) >= 0 && w6->document()->uniflex()->find({"src", "sub"}) < 0 &&
+              w6->document()->uniflex()->check().ok(), "src/sub dropped below the rows: moved to the root");
+        // hovering during a drag makes the folder the drop will land in current: a folder, a file's folder, the root below
+        QTreeWidgetItem *hroot = up->topLevelItem(0);
+        QTreeWidgetItem *hsrc = childNamed(hroot, "src"), *hdev = childNamed(hroot, "dev");
+        QTreeWidgetItem *hholey = childNamed(hsrc, "holey"), *hread = childNamed(hroot, "readme");
+        QMimeData *hm = (fp && hread) ? fp->makeMime({hread}) : nullptr;
+        auto hover = [&](const QPoint &at) {             // Qt sends a drag move only where a drag enter was taken
+            QDragEnterEvent enter(at, Qt::CopyAction, hm, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(up->viewport(), &enter);
+            QDragMoveEvent ev(at, Qt::CopyAction, hm, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(up->viewport(), &ev);
+            return ev.isAccepted();
+        };
+        CHECK(hm && hholey && hdev, "rows for hovering");
+        if (hm && hholey && hdev) {
+            up->expandAll();
+            CHECK(hover(up->visualItemRect(hdev).center()) && up->currentItem() == hdev, "over dev: dev highlighted");
+            CHECK(hover(up->visualItemRect(hholey).center()) && up->currentItem() == hsrc, "over src/holey: its folder src highlighted");
+            CHECK(hover(QPoint(5, up->viewport()->height() - 2)) && up->currentItem() == hroot, "below the rows: the root highlighted");
+        }
+        delete hm;
+        if (QTreeWidgetItem *rd = childNamed(up->topLevelItem(0), "readme")) {   // readme selected again, as before the drags
+            up->clearSelection();
+            rd->setSelected(true);
+            up->setCurrentItem(rd);
+        }
+    }
     CHECK(w6->windowTitle().contains("*"), "the title marks the change: " + w6->windowTitle());
     CHECK(w6->save() && !w6->windowTitle().contains("*"), "saved");
     err.clear();

@@ -81,8 +81,8 @@ and Copy give the files exactly as stored, names as they are (UniFLEX names are 
 Properties and Disc information show what the disc records; Tools > Check disc checks the whole file system: every
 file's blocks, the directories, link counts, the free list and the free fdns.
 
-**Changing a UniFLEX disc** works as on a FLEX disc: Add files, drops and Paste (into the folder selected), **New
-directory**, Rename, Properties (the name, the access bits and the owner), Delete (a folder with everything in it),
+**Changing a UniFLEX disc** works as on a FLEX disc: Add files, drops and Paste (into the folder selected, or the one
+dropped on), **New directory**, dragging files and folders onto another folder in the tree to move them there (the folder they will land in is highlighted as you hover), Rename, Properties (the name, the access bits and the owner), Delete (a folder with everything in it),
 Volume name (the pack name, file system name and number) and New disc image (TSC's four 8-inch formats). Every change
 is made **the way UniFLEX's own kernel makes it**: which blocks and file descriptor nodes are taken and freed, in what
 order, where a new name goes in a directory, how the free lists and the System Information Record end up. This was read

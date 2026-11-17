@@ -34,9 +34,11 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDataStream>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDrag>
+#include <QDragMoveEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -86,6 +88,7 @@ QMimeData *FlexPane::makeMime(const QList<QTreeWidgetItem *> &rows) const {
         return pw->exportItems(items, out, err);
     };
     auto *m = new dw::DragOutMime(exporter, win->dragSpec());
+    m->setData(DW_MIME_ITEMS, MainWindow::itemsPayload(sourceWindow(), items));   // a drop on a window of this program
     m->setData(DW_MIME_SOURCE, sourceTag());
     return m;
 }
@@ -107,13 +110,28 @@ void FlexPane::startDrag(Qt::DropActions) {
 }
 
 // A window with no disc opens dropped images; one with a disc that can be written imports what is dropped on it
-// (files, and retro-files JSON from another window or program); a read-only disc takes nothing.
+// (files, retro-files JSON from another program, items from another window), and a UniFLEX tree takes its own items
+// too (moved to the directory dropped on); a read-only disc takes nothing.
 dw::ui::VolumePane::DropRules FlexPane::dropRules() const {
     DropRules r;
     MainWindow *win = MainWindow::byId(sourceWindow());
     r.filesOnly = win && !win->hasDisc();
     r.take = win && (!win->hasDisc() || win->writable(0));
+    r.fromItself = win && win->hasUniflex();
     return r;
+}
+
+// While a drag is over the pane, the folder the drop will land in is the current row (as Acorn Disk Wrangler shows it):
+// the folder under the pointer, a file's folder, the root below the rows; on a FLEX disc, its one directory, the root.
+void FlexPane::dragMoveEvent(QDragMoveEvent *e) {
+    dw::ui::VolumePane::dragMoveEvent(e);
+    if (!e->isAccepted()) return;
+    MainWindow *win = MainWindow::byId(sourceWindow());
+    if (!win || !win->hasDisc()) return;         // an empty window opens what is dropped: no folder to show
+    QTreeWidgetItem *target = topLevelItem(0);
+    if (QTreeWidgetItem *it = win->hasUniflex() ? itemAt(dropPos(e)) : nullptr)
+        target = rowOf(it).isFile() && it->parent() ? it->parent() : it;
+    if (target && target != currentItem()) setCurrentItem(target);
 }
 
 // ================================================================================================ the window
@@ -224,8 +242,16 @@ MainWindow::MainWindow(QWidget *parent) : DiscWindow(parent) {
             if (!errors.isEmpty()) message("Drag", errors.join("\n"));
             else showMessage(QString("Copied %1 file%2 out of the disc.").arg(files).arg(files == 1 ? "" : "s"));
         });
-        connect(p, &FlexPane::retroFilesDropped, this, [this](const QByteArray &json, QTreeWidgetItem *) {
-            QTimer::singleShot(0, this, [this, json] { importJson(json); });     // no dialogs inside the drop handler
+        connect(p, &FlexPane::retroFilesDropped, this, [this](const QByteArray &json, QTreeWidgetItem *target) {
+            const dw::fs::Path dir = dropTarget(target);
+            QTimer::singleShot(0, this, [this, json, dir] { importJson(json, dir); });   // no dialogs inside the drop handler
+        });
+        connect(p, &FlexPane::internalDrop, this, [this](const QByteArray &payload, QTreeWidgetItem *target) {
+            quint64 from = 0;
+            QVector<Item> items;
+            if (!readItemsPayload(payload, &from, &items)) return;
+            const dw::fs::Path dir = dropTarget(target);
+            QTimer::singleShot(0, this, [this, from, items, dir] { dropItems(from, items, dir); });
         });
         connect(p, &FlexPane::dragOutNothing, this, [this] {
             showMessage("No files were copied out of the disc: the drop wasn't taken, or no file was asked for.");
@@ -727,14 +753,104 @@ void MainWindow::importPaths(const QStringList &paths, const dw::fs::Path &dir) 
     importItems(0, hasUniflex() ? dir : dw::fs::Path(), items, {}, readErrors);
 }
 
-// Retro-files JSON: dropped from another window or program, or pasted.
-void MainWindow::importJson(const QByteArray &json) {
+// Retro-files JSON: dropped from another program, or pasted.
+void MainWindow::importJson(const QByteArray &json) { importJson(json, importTarget()); }
+
+void MainWindow::importJson(const QByteArray &json, const dw::fs::Path &dir) {
     if (!hasDisc()) return;
     if (!writable(0)) { message("Add files", "The disc is read-only: " + readOnlyReason(0)); return; }
     QVector<dw::TransferItem> items;
     QString err;
     if (!dw::xfer::readJson(json, &items, &err)) { message("Add files", err); return; }
-    importItems(0, importTarget(), items);
+    importItems(0, hasUniflex() ? dir : dw::fs::Path(), items);
+}
+
+// Where a drop goes: the directory dropped on (a file: its directory), the root when dropped below the rows. Never the
+// selected row: that is usually what is being dragged.
+dw::fs::Path MainWindow::dropTarget(QTreeWidgetItem *row) const {
+    if (!hasUniflex() || !row) return dw::fs::Path();
+    return importTarget(row);
+}
+
+// The DW_MIME_ITEMS of a drag from a FLEX pane: the window it came from and its items (mount, path).
+QByteArray MainWindow::itemsPayload(quint64 window, const QVector<Item> &items) {
+    QByteArray payload;
+    QDataStream ds(&payload, QIODevice::WriteOnly);
+    ds << quint64(window) << qint32(items.size());
+    for (const Item &it : items) ds << qint32(it.mount) << it.path.parts;
+    return payload;
+}
+
+bool MainWindow::readItemsPayload(const QByteArray &payload, quint64 *window, QVector<Item> *items) {
+    QDataStream ds(payload);
+    qint32 n = 0;
+    ds >> *window >> n;
+    if (ds.status() != QDataStream::Ok || n < 0 || n > 1000000) return false;
+    items->clear();
+    for (qint32 k = 0; k < n; ++k) {
+        qint32 mount = 0;
+        QStringList parts;
+        ds >> mount >> parts;
+        if (ds.status() != QDataStream::Ok) return false;
+        *items << Item(mount, dw::fs::Path(parts));
+    }
+    return true;
+}
+
+// Items dragged from a window of this program and dropped on this one: moved within this UniFLEX disc, copied from
+// any other.
+void MainWindow::dropItems(quint64 fromWindow, const QVector<Item> &items, const dw::fs::Path &dir) {
+    if (!hasDisc() || items.isEmpty()) return;
+    QString err;
+    if (fromWindow == id()) {
+        int moved = 0;
+        if (!moveItems(items, dir, &moved, &err)) { message("Move", err); return; }
+        const QString where = dir.isRoot() ? QString("the root") : "/" + dir.toString();
+        showMessage(moved ? QString("Moved %1 item%2 to %3.").arg(moved).arg(moved == 1 ? "" : "s").arg(where)
+                          : "Nothing moved: already in " + where + ".");
+        return;
+    }
+    MainWindow *src = byId(fromWindow);
+    if (!src || !src->hasDisc()) { message("Add files", "The window the files came from has closed."); return; }
+    if (!writable(0)) { message("Add files", "The disc is read-only: " + readOnlyReason(0)); return; }
+    QVector<dw::TransferItem> t;
+    if (!src->exportItems(items, &t, &err)) { message("Add files", err); return; }
+    importItems(0, hasUniflex() ? dir : dw::fs::Path(), t);
+}
+
+// UniFLEX: items moved into dir, all in one transaction (all or none). An item already in dir stays; a name dir already
+// has is refused (a move never replaces), as is a directory into itself or one inside it (Writer::rename).
+bool MainWindow::moveItems(const QVector<Item> &items, const dw::fs::Path &dir, int *moved, QString *err) {
+    *moved = 0;
+    if (!hasUniflex()) { *err = "a FLEX disc has one directory"; return false; }
+    if (!writable(0)) { *err = "read-only: " + readOnlyReason(0); return false; }
+    const UniFlex::Fs *fs = m_doc.uniflex();
+    const int d = fs->find(dir.parts);
+    const UniFlex::Fdn *df = d >= 0 ? fs->fdnOf(fs->nodes()[d]) : nullptr;
+    if (d < 0 || (d > 0 && (!df || !df->isDir()))) { *err = "no such directory: /" + dir.toString(); return false; }
+    QVector<Item> todo;
+    QStringList names;
+    for (const Item &it : items) {
+        if (it.path.isRoot() || it.path.parent() == dir) continue;            // already there
+        const QString n = it.path.name();
+        if (fs->find(dir.child(n).parts) >= 0 || names.contains(n)) {
+            *err = QString("%1 already has %2").arg(dir.isRoot() ? QString("the root") : "/" + dir.toString(), UniFlex::printable(n));
+            return false;
+        }
+        names << n;
+        todo << it;
+    }
+    if (todo.isEmpty()) return true;
+    const bool done = m_doc.disc().transact([&](QString *e) {
+        dw::fs::Volume *v = m_doc.disc().volume(0);
+        if (!v) { *e = "no volume"; return false; }
+        for (const Item &it : todo)
+            if (!v->rename(it.path, dir.child(it.path.name()), e)) { *e = UniFlex::printable(it.path.name()) + ": " + *e; return false; }
+        return true;
+    }, err);
+    refresh();
+    if (done) *moved = todo.size();
+    return done;
 }
 
 void MainWindow::addFilesDialog() {

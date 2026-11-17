@@ -272,6 +272,9 @@ What UniFLEX's code doesn't settle, or settles in a way a disc image can't follo
   into itself or a directory inside it (the program follows the `..`s up from the destination). Deleting a directory deletes
   what is in it first, depth first in the directory's order, each as `kill` does, then the directory as `kill +d`
   does.
+- **A drag within the window moves** (the window's choice, not UniFLEX's): each item is renamed into the folder dropped
+  on as above, all in one change. A name the folder already has is refused, though UniFLEX's `rename` and the program's
+  Rename replace a file: a drag shouldn't remove one without asking.
 - **`/.badblocks`** can't be deleted or renamed (UniFLEX's `unlink` refuses fdn 2 with its `$80`).
 - **Renaming onto a name that exists** is refused (the family's rule: the core asks for the name to be free), where
   UniFLEX's `rename` would unlink that file first.

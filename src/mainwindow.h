@@ -39,6 +39,7 @@ public:
 protected:
     DropRules dropRules() const override;
     void startDrag(Qt::DropActions supported) override;
+    void dragMoveEvent(QDragMoveEvent *e) override;     // the folder a drop will land in made current, as Acorn's
 };
 
 class MainWindow : public dw::ui::DiscWindow {
@@ -86,6 +87,17 @@ public:
     void importPaths(const QStringList &paths);
     void importPaths(const QStringList &paths, const dw::fs::Path &dir);
     void importJson(const QByteArray &json);
+    void importJson(const QByteArray &json, const dw::fs::Path &dir);
+    // Items dragged from a window of this program (fromWindow: its id) and dropped on dir: moved within this UniFLEX
+    // disc (moveItems), copied from any other window.
+    void dropItems(quint64 fromWindow, const QVector<Item> &items, const dw::fs::Path &dir);
+    // UniFLEX: the items moved into dir in one transaction (all or none); *moved: how many (those already there stay).
+    bool moveItems(const QVector<Item> &items, const dw::fs::Path &dir, int *moved, QString *err);
+    // A drag's DW_MIME_ITEMS: the source window and its items.
+    static QByteArray itemsPayload(quint64 window, const QVector<Item> &items);
+    static bool readItemsPayload(const QByteArray &payload, quint64 *window, QVector<Item> *items);
+    // Where a drop on a row goes: its directory (a file's: its parent); no row, or a FLEX disc: the root.
+    dw::fs::Path dropTarget(QTreeWidgetItem *row) const;
     // Where copied-in files go for a row of the pane (null: the current row).
     dw::fs::Path importTarget(QTreeWidgetItem *row = nullptr) const;
 
