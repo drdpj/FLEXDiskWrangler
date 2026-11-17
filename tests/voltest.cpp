@@ -18,7 +18,7 @@
 // voltest - FLEX Disk Wrangler's discs through DiskWranglerCore's filesystem interface: detection by tiers, the
 // FLEX volume as a dw::fs::Disc (listing, reading, attributes, the check), changes made as FLEX makes them, each in a
 // transaction, a faithful reload, Save As, and the sample discs; and UniFLEX discs, read (series uniflex-1) and
-// changed (series uniflex-2).
+// changed (series uniflex-2); a FLEX disc in an ImageDisk file (series containers).
 //   voltest <dir made by flex_check.py make and uniflex_check.py make> [<the sample FLEX discs' folder>
 //           [<the UniFLEX sample discs' folder>]]
 #include <QCoreApplication>
@@ -390,6 +390,58 @@ static void track0(const QString &dir, const QString &work) {
     Flex::OpenedDisc cd;
     CHECK(openDisc(dir + "/cut.dsk", &cd, &err) && !cd.disk()->shortTrack0() && cd.disk()->track0Sectors() == 26 && !cd.readOnlyWhy(0).isEmpty(),
           "cut.dsk: 0/15 links on to 0/16, so a full track 0 in a short file, read-only: " + cd.readOnlyWhy(0));
+}
+
+// A FLEX disc in an ImageDisk file: short0.dsk on its 8" disc (double density, 26 sectors, MFM at 500 kbit/s) with
+// its single-density track 0 (15 sectors, FM). It reads as the raw file does, changes and saves into the ImageDisk
+// file keeping each track's shape, and Save As follows its rule (a raw image raw only).
+static void containers(const QString &dir, const QString &work) {
+    printf("a FLEX disc in an ImageDisk file, track 0 single density\n");
+    using dw::device::Kind;
+    QString err;
+    const QByteArray raw = slurp(dir + "/short0.dsk");
+    dw::device::RawLayout l;
+    l.seclen = 256; l.sectrk = 26; l.cyls = 77; l.heads = 1; l.mode = 3;
+    dw::device::Container m;
+    m.createBlank(Kind::Imd, l, "voltest");
+    CHECK(m.reshapeTrack(0, 0, 15, 256, 1, 0, &err), "track 0: 15 FM sectors");
+    m.setOwnTrack0(true);
+    dw::device::Linear lin(&m);
+    const QString imd = work + "/short0.imd";
+    QFile::remove(imd);
+    CHECK(lin.size() == raw.size() && lin.write(0, raw, &err) && m.saveAs(imd, Kind::Imd, &err), "made: " + err);
+    const dw::fs::Verdict v = verdictOf(imd);
+    CHECK(v.bestCandidate() && v.bestCandidate()->fsId == "flex" && v.bestCandidate()->tier == dw::fs::Tier::Certain &&
+          v.bestCandidate()->description.endsWith("(track 0: 15) in an ImageDisk file"), "certain: " + (v.bestCandidate() ? v.bestCandidate()->description : QString()));
+    Flex::OpenedDisc od, rd;
+    CHECK(openDisc(imd, &od, &err) && od.readOnlyWhy(0).isEmpty() && od.container().kind() == Kind::Imd, "opens writable: " + err + od.readOnlyWhy(0));
+    CHECK(openDisc(dir + "/short0.dsk", &rd, &err), "and the raw file");
+    if (!od.disk() || !rd.disk()) return;
+    CHECK(describe(*od.disk()) == describe(*rd.disk()) && od.disk()->track0Sectors() == 15, "the same disc as the raw file");
+    for (Flex::OpenedDisc *x : {&od, &rd}) {
+        dw::fs::Volume *vol = x->disc().volume(0);
+        CHECK(x->disc().transact([&](QString *e) { return vol->write(Path(), "GROW.TXT", "grows", {}, QDateTime(), false, e); }, &err), "a new file: " + err);
+    }
+    QByteArray a, b;
+    CHECK(od.disk()->linear().read(0, raw.size(), &a, &err) && rd.disk()->linear().read(0, raw.size(), &b, &err) && a == b,
+          "the same change as on the raw file, the same bytes");
+    const QString after = describe(*od.disk());
+    CHECK(od.save(false, &err) && od.container().kind() == Kind::Imd && od.container().ownTrack0(), "saved into the ImageDisk file: " + err);
+    Flex::OpenedDisc again;
+    CHECK(openDisc(imd, &again, &err) && describe(*again.disk()) == after, "read back the same: " + err);
+    const dw::device::Track *t0 = again.container().track(0, 0), *t1 = again.container().track(1, 0);
+    CHECK(t0 && t0->mode == 0 && t0->secs.size() == 15 && t1 && t1->mode == 3 && t1->secs.size() == 26, "each track's density and sectors kept");
+
+    const QString asRaw = work + "/short0-from-imd.dsk", asDsk = work + "/short0-copy.dsk", no = work + "/no.imd";
+    for (const QString &f : {asRaw, asDsk, no}) QFile::remove(f);
+    Flex::OpenedDisc c1, c2;
+    CHECK(again.convertTo(asRaw, Kind::Raw, &err) && slurp(asRaw) == a && openDisc(asRaw, &c1, &err) && c1.disk()->track0Sectors() == 15 &&
+          describe(*c1.disk()) == after, "converted to raw: track 0 stored short, the same disc: " + err);
+    CHECK(again.saveAs(asDsk, Kind::Edsk, &err) && again.container().kind() == Kind::Edsk && openDisc(asDsk, &c2, &err) &&
+          describe(*c2.disk()) == after, "Save As extended DSK: " + err);
+    CHECK(!rd.canSaveAs(Kind::Imd, &err) && err.contains("only be saved as a raw image") && !rd.saveAs(no, Kind::Imd, &err) && !QFile::exists(no),
+          "a raw image isn't saved as ImageDisk: " + err);
+    CHECK(!again.canSaveAs(Kind::Td0, &err) && rd.canSaveAs(Kind::Raw, &err), "nor anything as TeleDisk");
 }
 
 static void faults(const QString &dir) {
@@ -764,6 +816,7 @@ int main(int argc, char **argv) {
     changes(dir, work);
     newDiscs(dir, work);
     track0(dir, work);
+    containers(dir, work);
     faults(dir);
     names();
     uniflexBasic(dir, work);

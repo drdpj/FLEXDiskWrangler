@@ -41,11 +41,22 @@ UniFLEX releases and sources for SWTPC and Gimix machines. This work would not h
 ## The image
 
 A raw file of 512-byte blocks: block n is at byte n x 512. (The emulators that made the samples store the blocks in
-order; an 8" disc's single-density track 0 is not visible in them.) The file holds the volume (blocks 0 to the SIR's
+order.) The file holds the volume (blocks 0 to the SIR's
 `ssizfr`) and, after it, the swap space if the SIR has one (`sswpbg`, `sswpsz` blocks). So the file is
 `max(ssizfr + 1, sswpbg + sswpsz)` blocks: 2464 (8" double-sided double density), 2432, 1232, 616 or 31212
 (Winchester) on the samples. A file shorter than that has lost blocks (`empty_CMI5619.dsk`); one a block short of its
 swap space (`C012_1`) loses nothing of the file system.
+
+**In ImageDisk, DSK and TeleDisk files** (series `containers`, 16 Nov 2026), from TSC's floppy driver (`dmf3drvr`,
+`uos-s3`) and formatter (`formatfd`): an 8" floppy is one density throughout (the driver reads the SIR single density
+and, failing that, double; `formatfd` formats every track at the type's density): 8 sectors of 512 a side single
+density (FM), 16 double (MFM), at 500 kbit/s. Block n is sector `n mod S + 1` of track `n / S` (S the sectors a
+side); on a double-sided disc the cylinder is the track / 2 and the side its low bit, side 1's sectors numbered on
+from side 0's (9-16 or 17-32), or from 1 again on an OMTI disc. Either way the disc is the container's tracks
+cylinder by cylinder, side 0 then side 1, each side's sectors in ID order: block n at byte n x 512 of that, as in a
+raw file. The probe takes a container whose tracks are all 512-byte sectors of one shape; changes, Save As and new
+discs are as for FLEX (`disc-format.md`, "In ImageDisk, DSK and TeleDisk files"): every track keeps its density, IDs
+and order; new discs are the four 8" types with side 1 numbered on, and can be standard DSK too.
 
 | Blocks | What |
 | --- | --- |

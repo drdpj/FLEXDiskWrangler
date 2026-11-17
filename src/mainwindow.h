@@ -71,7 +71,8 @@ public:
     // What the dialogs do, for them and the tests. newImage: a blank disc (Flex::createBlank) at path, its boot loader
     // copied from bootSource if one is named, opened in this window (or a new one if this one has a disc). The others
     // change the open disc in one transaction each.
-    bool newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err);
+    bool newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err,
+                  dw::device::Kind kind = dw::device::Kind::Raw);
     bool renameFile(const Item &item, const QString &newName, QString *err);
     // A UniFLEX directory made in dir (the root: an empty path).
     bool makeDirectory(const dw::fs::Path &dir, const QString &name, QString *err);

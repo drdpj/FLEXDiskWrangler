@@ -87,7 +87,8 @@ private:
 // What the FLEX probe found, for the program to open the disc with (Candidate::data).
 struct ProbeResult {
     Sir sir;
-    bool exact = false;                          // the SIR's geometry is exactly the file's size
+    bool exact = false;                          // the SIR's geometry is exactly the file's size (or the disc's, in an
+                                                 // ImageDisk, DSK or TeleDisk file)
     int track0 = 0;                              // track 0 stored short, with this many sectors (0: a full track)
 };
 
@@ -111,6 +112,8 @@ public:
     bool writableGeometry() const { return m_exact; }
     bool checkOk() const { return m_checkOk; }                       // the disc's check found no errors when it opened
     static const char *const GeometryText;       // why a disc whose file isn't its geometry's size can't be written
+    QString geometryWhy() const;                 // that, or for a disc in an ImageDisk, DSK or TeleDisk file its own words
+    static const char *const TeleDiskText;       // why a disc in a TeleDisk file can't be written
     void detach();
     void noteFileState();
 
@@ -129,6 +132,11 @@ public:
     bool dirty() const override { return m_img.hasPending(); }
     bool save(bool backup, QString *err) override;
     bool saveAs(const QString &path, dw::device::Kind kind, QString *err) override;
+    // Save As's rule: a raw image saved as raw only; a disc in an ImageDisk, DSK or TeleDisk file as ImageDisk, DSK,
+    // extended DSK or raw. Never as TeleDisk.
+    bool canSaveAs(dw::device::Kind kind, QString *err) const;
+    // flexdw's convert: the disc as its file holds it, written to out as kind, read back and checked.
+    bool convertTo(const QString &out, dw::device::Kind kind, QString *err) const;
     QString readOnlyWhy(int mount) const override;
 
 private:
@@ -160,20 +168,26 @@ const dw::fs::Preset *findPreset(const QString &id);
 bool volumeNameBytes(const QString &name, QByteArray *out, QString *err);
 // A UniFLEX pack name: up to 14 characters, Latin-1, no NUL.
 bool uniflexPackBytes(const QString &name, QByteArray *out, QString *err);
-// A blank raw image at path (replacing anything there): the preset's shape laid out as NEWDISK does, the name, number
+// A blank disc at path (replacing anything there): the preset's shape laid out as NEWDISK does, the name, number
 // and date in its SIR; with boot (sectors 1 and 2 of another disc, 512 bytes) its loader copied in, not linked. A
 // UniFLEX preset: laid out as TSC's formatter does (UniFlex::formatDisc), name the pack name, number the file system
-// number, the time now (the core's clock); no boot.
+// number, the time now (the core's clock); no boot. kind: a raw image (a short track 0 padded), or an ImageDisk or DSK
+// file of the disc itself (the preset's sides and density, track 0 single density where TSC's format has it, side 1's
+// sectors numbered on from side 0's); the kinds each preset takes are its containers.
 bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
-                 const QByteArray &boot, QString *err);
+                 const QByteArray &boot, QString *err, dw::device::Kind kind = dw::device::Kind::Raw);
 // The boot loader of another FLEX disc image (sectors 1 and 2): refused if it isn't a FLEX disc or sector 1 is empty.
 bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err);
+// " in an ImageDisk file" and so on, for a disc's description; empty for a raw file.
+QString containerPhrase(dw::device::Kind k);
 
 // ----- detection by tiers
 // A FLEX disc in a raw file: the SIR's geometry fits the file and the directory can be read. Certain when the
 // geometry is exactly the file's size and the directory's chain starts on the disc; Possible when the file is a
 // little longer or shorter than the geometry. A double-density disc's single-density track 0 stored at its own size
-// (storedTrack0, confirmed by endsTrack0) is exact too. data is a ProbeResult.
+// (storedTrack0, confirmed by endsTrack0) is exact too. In an ImageDisk, DSK or TeleDisk file the same tests run on
+// its stored bytes, cylinder 0 at its own size (Flex::verdict turns Container::setOwnTrack0 on); sector IDs not numbered
+// as FLEX numbers them are noted. data is a ProbeResult.
 class FlexProbe : public dw::fs::Probe {
 public:
     QString id() const override { return "flex"; }
@@ -189,7 +203,7 @@ public:
     QVector<dw::fs::Candidate> probe(const dw::fs::ProbeContext &ctx) const override;
 };
 
-// Runs the probes on an opened container: FLEX, UniFLEX, OS-9.
+// Runs the probes on an opened container: FLEX, UniFLEX, OS-9. Turns the container's setOwnTrack0 on.
 dw::fs::Verdict verdict(dw::device::Container &img, const QString &path);
 
 } // namespace Flex

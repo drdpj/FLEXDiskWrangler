@@ -225,7 +225,22 @@ bool FlexVolume::setVolumeAttrs(const dw::fs::AttrValues &a, QString *err) {
 // ------------------------------------------------------------------------------------------------ the opened disc
 
 // track0: a short track 0 stored at its own size (0: a full track).
-static dw::device::RawLayout layoutOf(const Sir &s, int track0 = 0) {
+static dw::device::RawLayout layoutOf(const Sir &s, int track0 = 0);
+
+// Makes the disc's bytes readable as FLEX's sectors in order: a raw file gets the SIR's layout; any other container
+// gives its stored bytes, cylinder 0 at its own size (Container::setOwnTrack0). bytes: how many.
+static bool flexLinear(dw::device::Container *img, const ProbeResult &r, qint64 *bytes, QString *err) {
+    if (img->kind() == dw::device::Kind::Raw) {
+        const dw::device::RawLayout l = layoutOf(r.sir, r.track0);
+        if (!img->setRawLayout(l, err)) return false;
+        *bytes = l.bytes();
+        return true;
+    }
+    img->setOwnTrack0(true);
+    return (*bytes = img->storedSize(err)) > 0;
+}
+
+static dw::device::RawLayout layoutOf(const Sir &s, int track0) {
     dw::device::RawLayout l;
     l.seclen = SectorSize;
     l.sectrk = s.sectors;                        // FLEX numbers a cylinder's sectors on both sides as one track
@@ -279,19 +294,27 @@ bool OpenedDisc::open(const QString &path, const UniFlex::ProbeResult &r, QStrin
 }
 
 // The file as it is, in 512-byte blocks (a part block at its end padded): the Fs knows which blocks the volume needs.
+// In an ImageDisk, DSK or TeleDisk file: its stored bytes, block n at n x 512 (cylinder by cylinder, side 0 then side 1,
+// sectors in ID order: the kernel's driver numbers side 1's sectors on from side 0's, or from 1 again on an OMTI disc).
 bool OpenedDisc::attach(const UniFlex::ProbeResult &r, QString *err) {
-    if (m_img.kind() != dw::device::Kind::Raw) { *err = "only raw UniFLEX images can be read so far"; return false; }
-    dw::device::RawLayout l;
-    l.seclen = UniFlex::BlockSize;
-    l.sectrk = 1;
-    l.cyls = int((r.fileBytes + UniFlex::BlockSize - 1) / UniFlex::BlockSize);
-    l.heads = 1;
-    l.firstId = 1;
-    if (!m_img.setRawLayout(l, err)) return false;
+    qint64 bytes = 0;
+    if (m_img.kind() == dw::device::Kind::Raw) {
+        dw::device::RawLayout l;
+        l.seclen = UniFlex::BlockSize;
+        l.sectrk = 1;
+        l.cyls = int((r.fileBytes + UniFlex::BlockSize - 1) / UniFlex::BlockSize);
+        l.heads = 1;
+        l.firstId = 1;
+        if (!m_img.setRawLayout(l, err)) return false;
+        bytes = l.bytes();
+    } else {
+        m_img.setOwnTrack0(true);
+        if (!(bytes = m_img.storedSize(err))) return false;
+    }
     detach();
     m_disc.setContainer(&m_img);
     auto fs = std::make_unique<UniFlex::Fs>();
-    if (!fs->attach(dw::device::Linear(&m_img, dw::device::SideOrder(), l.bytes()), err)) return false;
+    if (!fs->attach(dw::device::Linear(&m_img, dw::device::SideOrder(), bytes), err)) return false;
     m_ufs = std::move(fs);
     m_checkOk = m_ufs->check().ok();
     m_exact = r.exact;
@@ -299,14 +322,15 @@ bool OpenedDisc::attach(const UniFlex::ProbeResult &r, QString *err) {
     return true;
 }
 
+// A raw file gets the SIR's layout. An ImageDisk, DSK or TeleDisk file records where each sector is: its stored bytes,
+// cylinder 0 at its own size, are FLEX's sectors in order (stored0 below).
 bool OpenedDisc::attach(const ProbeResult &r, QString *err) {
-    if (m_img.kind() != dw::device::Kind::Raw) { *err = "only raw FLEX images (.dsk) can be read so far"; return false; }
-    const dw::device::RawLayout l = layoutOf(r.sir, r.track0);
-    if (!m_img.setRawLayout(l, err)) return false;
+    qint64 bytes = 0;
+    if (!flexLinear(&m_img, r, &bytes, err)) return false;
     detach();
     m_disc.setContainer(&m_img);
     auto disk = std::make_unique<Disk>();
-    if (!disk->attach(dw::device::Linear(&m_img, dw::device::SideOrder(), l.bytes()), err)) return false;
+    if (!disk->attach(dw::device::Linear(&m_img, dw::device::SideOrder(), bytes), err)) return false;
     m_disk = std::move(disk);
     m_checkOk = m_disk->check().ok();
     m_exact = r.exact;
@@ -314,13 +338,20 @@ bool OpenedDisc::attach(const ProbeResult &r, QString *err) {
     return true;
 }
 
+QString OpenedDisc::geometryWhy() const {
+    return m_img.kind() == dw::device::Kind::Raw ? QString(GeometryText)
+                                                 : "the disc in the image file doesn't match the geometry in its System Information Record";
+}
+
+const char *const OpenedDisc::TeleDiskText = "TeleDisk images are read-only here: use Save As to make an ImageDisk, DSK or raw copy";
 const char *const OpenedDisc::GeometryText = "the image file's size doesn't match the disc's geometry in its System Information Record";
 
 QString OpenedDisc::readOnlyWhy(int mount) const {
     if (m_disc.mounts().isEmpty()) return "no disc";
+    if (m_img.readOnlyContainer()) return TeleDiskText;
     if (!m_checkOk) return "the disc has errors (Tools > Check disc)";
     if (m_ufs) return m_ufs->shortImage() ? "the image file is shorter than the UniFLEX volume in its System Information Record" : QString();
-    if (!m_exact) return GeometryText;
+    if (!m_exact) return geometryWhy();
     const dw::fs::Disc::Mount m = m_disc.mounts().value(mount);
     return m.readOnly ? m.readOnlyWhy : QString();
 }
@@ -364,8 +395,56 @@ bool OpenedDisc::save(bool backup, QString *err) {
     return true;
 }
 
+// A raw file holds no sides, densities or sector IDs, so it is saved as raw only; a disc in an ImageDisk, DSK or TeleDisk
+// file can be saved in any of them (and as raw: track 0 then at its own size).
+bool OpenedDisc::canSaveAs(dw::device::Kind kind, QString *err) const {
+    if (kind == dw::device::Kind::Td0) { *err = "TeleDisk files can be read but not written"; return false; }
+    if (m_img.kind() == dw::device::Kind::Raw && kind != dw::device::Kind::Raw) {
+        *err = "a raw image doesn't say how its sectors lie on the disc (sides, density, sector numbers), so it can only be saved as a raw image";
+        return false;
+    }
+    return true;
+}
+
+// The disc as its file holds it (no staged changes) written to out in another container, read back and checked
+// before it is put in place: flexdw's convert.
+bool OpenedDisc::convertTo(const QString &out, dw::device::Kind kind, QString *err) const {
+    if (!canSaveAs(kind, err)) return false;
+    dw::device::Container x = m_img;
+    x.discardPending();
+    const bool uf = m_ufs != nullptr;
+    const qint64 size = uf ? m_ufs->linear().size() : m_disk ? m_disk->linear().size() : 0;
+    int files = -1;
+    bool ok = true;
+    auto readBack = [uf, size](dw::device::Container &c, int *n, bool *good, QString *e) {
+        if (uf) {
+            UniFlex::Fs f;
+            if (!f.attach(dw::device::Linear(&c, dw::device::SideOrder(), size), e)) return false;
+            *n = f.nodes().size();
+            *good = f.check().ok();
+        } else {
+            Disk d;
+            if (!d.attach(dw::device::Linear(&c, dw::device::SideOrder(), size), e)) return false;
+            *n = d.files().size();
+            *good = d.check().ok();
+        }
+        return true;
+    };
+    if (size && !readBack(x, &files, &ok, err)) return false;
+    auto verify = [&](dw::device::Container &w, QString *e) {
+        if (!size) return true;
+        int n = -1;
+        bool good = true;
+        if (!readBack(w, &n, &good, e)) { *e = "the copy can't be read back: " + *e; return false; }
+        if (ok && !good) { *e = "the copy is not consistent"; return false; }
+        if (n != files) { *e = "the copy does not hold the same files"; return false; }
+        return true;
+    };
+    return x.saveAs(out, kind, err, verify);
+}
+
 bool OpenedDisc::saveAs(const QString &path, dw::device::Kind kind, QString *err) {
-    if (kind != dw::device::Kind::Raw) { *err = "FLEX and UniFLEX discs are saved as raw images (.dsk) so far."; return false; }
+    if (!canSaveAs(kind, err)) { err->replace(0, 1, err->left(1).toUpper()); *err += "."; return false; }
     const bool ok = m_ufs ? m_ufs->check().ok() : !m_disk || m_disk->check().ok();
     auto verify = [this, ok](dw::device::Container &written, QString *e) { return !ok || checkWritten(written, e); };
     if (!m_img.saveAs(path, kind, err, verify)) return false;
@@ -432,6 +511,15 @@ QVector<dw::fs::Preset> presets() {
         p.extra["tracks"] = s.tracks;
         p.extra["sectors"] = s.sectors;
         p.extra["track0"] = s.track0;
+        // the disc it is (TSC's 6809 FLEX Adaptation Guide, Appendix B): single density 10 sectors a side on 5.25"
+        // discs and 15 on 8", double density 18 and 26; 250 kbit/s on 5.25" discs, 500 on 8"; a double-density disc's
+        // track 0 single density, unless (40 x 36, the sample discs' shape) it is double density too
+        const int perSide = s.sectors / s.heads;
+        const bool eight = s.tracks == 77;
+        p.extra["fm"] = perSide == (eight ? 15 : 10);
+        p.extra["rate"] = eight ? 500 : 250;
+        p.containers = QStringList{"raw", "imd", "edsk"};
+        if (s.track0 == s.sectors) p.containers << "dsk";            // a standard DSK file's tracks are all one size
         out << p;
     }
     // UniFLEX: the 8" floppies TSC's formatter makes (formatfd's FD-SS, FD-SD, FD-DS, FD-DD: 77 cylinders, 8 blocks of
@@ -467,6 +555,9 @@ QVector<dw::fs::Preset> presets() {
         p.extra["track0"] = u.heads * u.sectors;
         p.extra["density"] = u.density;
         p.extra["sides"] = u.sides;
+        p.extra["fm"] = u.density == 0;                         // one density throughout (TSC's floppy driver)
+        p.extra["rate"] = 500;
+        p.containers = QStringList{"raw", "imd", "edsk", "dsk"};
         out << p;
     }
     return out;
@@ -499,8 +590,48 @@ bool uniflexPackBytes(const QString &name, QByteArray *out, QString *err) {
     return true;
 }
 
+// A new disc's bytes (as its raw image holds them: a FLEX disc's short track 0 padded) written to path as kind. A raw
+// image is the bytes. An ImageDisk or DSK file is the disc itself: p's cylinders and sides, side 1's sectors numbered on
+// from side 0's (as FLEX and UniFLEX's driver number them), FM or MFM at the preset's rate, and a FLEX disc's
+// single-density track 0 its own shape, its padding left out.
+static bool writeNew(const QString &path, const dw::fs::Preset &p, const QByteArray &bytes, dw::device::Kind kind, QString *err) {
+    using dw::device::Kind;
+    const QString comment = QString("Made by FLEX Disk Wrangler, %1").arg(p.id);
+    if (!p.containers.contains(kind == Kind::Raw ? "raw" : kind == Kind::Imd ? "imd" : kind == Kind::Edsk ? "edsk" : kind == Kind::Dsk ? "dsk" : "?")) {
+        *err = QString("a %1 disc can't be made as %2").arg(p.id, dw::device::kindName(kind));
+        return false;
+    }
+    if (kind == Kind::Raw) {
+        dw::device::RawLayout l;
+        l.seclen = p.sectorSize; l.sectrk = 1; l.cyls = int(bytes.size() / p.sectorSize); l.heads = 1; l.firstId = 1;
+        dw::device::Container img;
+        img.createBlank(Kind::Raw, l, comment);
+        dw::device::Linear lin(&img, dw::device::SideOrder(), l.bytes());
+        return lin.write(0, bytes, err) && img.saveAs(path, Kind::Raw, err);
+    }
+    const bool fm = p.extra.value("fm").toBool();
+    const int rate = p.extra.value("rate").toInt();
+    auto mode = [rate](bool f) { return rate == 500 ? (f ? 0 : 3) : (f ? 2 : 5); };     // ImageDisk's modes
+    const int perTrack = p.extra.value("sectors").toInt(), track0 = p.extra.value("track0", perTrack).toInt();
+    dw::device::RawLayout l;
+    l.seclen = p.sectorSize; l.sectrk = p.sectors; l.cyls = p.cylinders; l.heads = p.heads; l.firstId = 1; l.mode = mode(fm);
+    dw::device::Container img;
+    img.createBlank(kind, l, comment);
+    for (int c = 0; c < p.cylinders; ++c)
+        for (int h = 0; h < p.heads; ++h) {
+            const int n = c == 0 ? track0 / p.heads : p.sectors;
+            if (!img.reshapeTrack(c, h, n, p.sectorSize, 1 + h * n, mode(fm || (c == 0 && n < p.sectors)), err)) return false;
+        }
+    img.setOwnTrack0(true);
+    QByteArray stored = bytes;
+    if (track0 < perTrack) stored.remove(track0 * p.sectorSize, (perTrack - track0) * p.sectorSize);   // track 0's padding
+    dw::device::Linear lin(&img);
+    if (lin.size() != stored.size()) { *err = "the new disc doesn't fit its shape"; return false; }
+    return lin.write(0, stored, err) && img.saveAs(path, kind, err);
+}
+
 // A new UniFLEX disc (UniFlex::formatDisc), timed by the core's clock.
-static bool createUniflex(const QString &path, const dw::fs::Preset &p, const QString &name, int number, QString *err) {
+static bool createUniflex(const QString &path, const dw::fs::Preset &p, const QString &name, int number, dw::device::Kind kind, QString *err) {
     QByteArray pack;
     if (!uniflexPackBytes(name, &pack, err)) return false;
     if (number < 0 || number > 65535) { *err = "a UniFLEX file system number is 0 to 65535"; return false; }
@@ -514,17 +645,14 @@ static bool createUniflex(const QString &path, const dw::fs::Preset &p, const QS
     l.cyls = int(bytes.size() / UniFlex::BlockSize);
     l.heads = 1;
     l.firstId = 1;
-    dw::device::Container img;
-    img.createBlank(dw::device::Kind::Raw, l, QString("Made by FLEX Disk Wrangler, %1").arg(p.id));
-    dw::device::Linear lin(&img, dw::device::SideOrder(), l.bytes());
-    return lin.write(0, bytes, err) && img.saveAs(path, dw::device::Kind::Raw, err);
+    return writeNew(path, p, bytes, kind, err);
 }
 
 bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &name, int number, const QDate &date,
-                 const QByteArray &boot, QString *err) {
+                 const QByteArray &boot, QString *err, dw::device::Kind kind) {
     if (p.fsId == "uniflex") {
         if (!boot.isEmpty()) { *err = "a FLEX boot loader can't go on a UniFLEX disc"; return false; }
-        return createUniflex(path, p, name, number, err);
+        return createUniflex(path, p, name, number, kind, err);
     }
     const int tracks = p.extra.value("tracks").toInt(), sectors = p.extra.value("sectors").toInt();
     const int track0 = p.extra.value("track0", sectors).toInt();
@@ -542,7 +670,8 @@ bool createBlank(const QString &path, const dw::fs::Preset &p, const QString &na
         Disk d;
         if (!d.attach(lin, err) || !d.setBootSectors(boot, TS(), err)) return false;
     }
-    return img.saveAs(path, dw::device::Kind::Raw, err);
+    QByteArray bytes;
+    return lin.read(0, lin.size(), &bytes, err) && writeNew(path, p, bytes, kind, err);
 }
 
 bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err) {
@@ -552,18 +681,49 @@ bool readBootLoader(const QString &imagePath, QByteArray *out, QString *err) {
     const dw::fs::Candidate *c = v.bestCandidate();
     if (!c || c->fsId != "flex") { *err = QFileInfo(imagePath).fileName() + " isn't a FLEX disc image"; return false; }
     const ProbeResult r = std::any_cast<ProbeResult>(c->data);
-    const dw::device::RawLayout l = layoutOf(r.sir, r.track0);
-    if (!img.setRawLayout(l, err)) return false;
+    qint64 bytes = 0;
+    if (!flexLinear(&img, r, &bytes, err)) return false;
     Disk d;
-    if (!d.attach(dw::device::Linear(&img, dw::device::SideOrder(), l.bytes()), err)) return false;
+    if (!d.attach(dw::device::Linear(&img, dw::device::SideOrder(), bytes), err)) return false;
     if (!d.hasLoader()) { *err = QFileInfo(imagePath).fileName() + " has no boot loader (its track 0 sector 1 is empty)"; return false; }
     return d.bootSectors(out, err);
 }
 
 // ------------------------------------------------------------------------------------------------ detection
 
+QString containerPhrase(dw::device::Kind k) {
+    switch (k) {
+    case dw::device::Kind::Imd: return " in an ImageDisk file";
+    case dw::device::Kind::Dsk: return " in a DSK file";
+    case dw::device::Kind::Edsk: return " in an extended DSK file";
+    case dw::device::Kind::Td0: return " in a TeleDisk file (read-only)";
+    default: return QString();
+    }
+}
+
+// FLEX asks the controller for a sector by its ID, numbering a cylinder's sectors on both sides as one track from 1
+// (TSC's 6809 FLEX Adaptation Guide). Empty when every cylinder's IDs, side 0's then side 1's, run 1, 2, 3 ...; else
+// how they are numbered. (The stored bytes are in that order whatever the IDs, so this is only said.)
+static QString idNumbering(const dw::device::Container &c) {
+    bool flex = true, eachSide = true;           // eachSide: every side numbered from 1 instead
+    for (int cyl = 0; cyl < c.cylinders(); ++cyl) {
+        int next = 1;
+        for (int h = 0; h < c.heads(); ++h)
+            for (int i = 0; i < c.sectorCount(cyl, h); ++i, ++next) {
+                const int id = c.sector(cyl, h, i)->r;
+                if (id != next) flex = false;
+                if (id != i + 1) eachSide = false;
+            }
+    }
+    if (flex) return QString();
+    if (eachSide) return "each side's sectors are numbered from 1, where FLEX numbers side 1's on from side 0's";
+    return "its sector IDs aren't numbered 1, 2, 3 ... on each cylinder as FLEX numbers them";
+}
+
 QVector<dw::fs::Candidate> FlexProbe::probe(const dw::fs::ProbeContext &ctx) const {
-    if (!ctx.container || ctx.container->kind() != dw::device::Kind::Raw) return {};
+    if (!ctx.container) return {};
+    const bool raw = ctx.container->kind() == dw::device::Kind::Raw;
+    if (!raw && !ctx.container->ownTrack0()) return {};             // Flex::verdict turns it on
     const qint64 size = ctx.size();
     if (size < qint64(FirstDirSector) * SectorSize) return {};
     ProbeResult r;
@@ -586,13 +746,22 @@ QVector<dw::fs::Candidate> FlexProbe::probe(const dw::fs::ProbeContext &ctx) con
     c.name = "FLEX";
     const QString label = r.sir.labelText();
     c.description = QString("FLEX disc%1, %2 tracks of %3 sectors").arg(label.isEmpty() ? QString() : " " + label)
-                        .arg(r.sir.lastTrack + 1).arg(r.sir.sectors) + (r.track0 ? QString(" (track 0: %1)").arg(r.track0) : QString());
+                        .arg(r.sir.lastTrack + 1).arg(r.sir.sectors) + (r.track0 ? QString(" (track 0: %1)").arg(r.track0) : QString()) +
+                    containerPhrase(ctx.container->kind());
     c.tier = r.exact ? dw::fs::Tier::Certain : dw::fs::Tier::Possible;
     c.evidence << QString("the SIR describes %1 tracks of %2 sectors").arg(r.sir.lastTrack + 1).arg(r.sir.sectors);
-    if (r.track0) c.evidence << QString("which is exactly the file's size with track 0 stored at its own %1 sectors "
-                                        "(a double-density disc's single-density track 0), its directory ending there").arg(r.track0);
-    else if (r.exact) c.evidence << "which is exactly the file's size";
-    else c.notes << QString("the file is %1 bytes; the SIR's geometry is %2").arg(size).arg(qint64(r.sir.lastTrack + 1) * r.sir.sectors * SectorSize);
+    const QString what = raw ? "the file's size" : "the disc in the file";
+    if (r.track0) c.evidence << QString("which is exactly %1 with track 0 %2 its own %3 sectors "
+                                        "(a double-density disc's single-density track 0), its directory ending there")
+                                    .arg(what, raw ? "stored at" : "of").arg(r.track0);
+    else if (r.exact) c.evidence << "which is exactly " + what;
+    else c.notes << QString("the %1 %2 bytes; the SIR's geometry is %3").arg(raw ? "file is" : "disc in the file holds")
+                      .arg(size).arg(qint64(r.sir.lastTrack + 1) * r.sir.sectors * SectorSize);
+    if (!raw) {
+        const QString ids = idNumbering(*ctx.container);
+        if (ids.isEmpty()) c.evidence << "its sector IDs are numbered as FLEX numbers them";
+        else c.notes << ids;
+    }
     c.safeToWrite = r.exact;
     c.data = r;
     return {c};
@@ -630,6 +799,7 @@ dw::fs::Verdict verdict(dw::device::Container &img, const QString &path) {
     ctx.path = path;
     ctx.suffix = QFileInfo(path).suffix().toLower();
     ctx.container = &img;
+    img.setOwnTrack0(true);          // a double-density disc's single-density track 0 (no effect on a raw file)
     const FlexProbe flex;
     const UniFlex::UniFlexProbe uniflex;
     const OtherSystemsProbe other;

@@ -5,8 +5,8 @@
 # uniflex_check.py make), and runs: the core's tests, voltest, the GUI test, flexdw's golden cases, the independent
 # FLEX and UniFLEX readers against flexdw on every synthetic disc and (given the folders) every sample disc, flexdw's
 # changes against the independent model of how FLEX writes (flex_check.py writes), its UniFLEX changes and new discs
-# against the independent model of how UniFLEX writes (uniflex_check.py writes), and the check that flexdw links no Qt
-# GUI library.
+# against the independent model of how UniFLEX writes (uniflex_check.py writes), the discs in ImageDisk and extended
+# DSK files (containers_check.py), and the check that flexdw links no Qt GUI library.
 # Ends "ALL PASSED" or "SOME TESTS FAILED"; exit status 0 only if everything passed.
 src=$(cd "$(dirname "$0")/.." && pwd)
 b=${1:?usage: run_all.sh <build dir> [<sample FLEX discs> [<sample UniFLEX discs>]]}; real=$2; ufreal=$3
@@ -80,6 +80,17 @@ cat "$W/writes.log"
 step "flexdw's UniFLEX changes and new discs against the independent model of how UniFLEX writes (uniflex_check.py writes)${ufreal:+, healthy UniFLEX samples too}"
 timeout 1800 python3 -I "$src/tests/uniflex_check.py" writes "$b/flexdw/flexdw" "$W/syn" ${ufreal:+"$W/ufreal"} > "$W/uf-writes.log" 2>&1 || fail=1
 cat "$W/uf-writes.log"
+
+step "ImageDisk and extended DSK (containers_check.py): the synthetic discs${real:+, the FLEX samples}${ufreal:+, the UniFLEX samples} on their physical discs; flexdw reads each as its raw disc, and changes, saves and converts it the same"
+timeout 600 python3 -I "$src/tests/containers_check.py" make "$W/ct" "$W/syn"/*.dsk ${real:+"$W/real"/*} ${ufreal:+"$W/ufreal"/*.dsk} > "$W/ct-make.log" 2>&1 || { cat "$W/ct-make.log"; fail=1; }
+echo "$(python3 -I -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$W/ct/pairs.json") containers made ($(grep -c 'skipped' "$W/ct-make.log") discs with no physical shape known skipped)"
+timeout 1800 python3 -I "$src/tests/containers_check.py" compare "$b/flexdw/flexdw" "$W/ct" > "$W/ct-compare.log" 2>&1 || fail=1
+grep -v ': reads as its raw disc' "$W/ct-compare.log"; echo "$(grep -c ': reads as its raw disc' "$W/ct-compare.log") containers read as their raw discs"
+timeout 3000 python3 -I "$src/tests/containers_check.py" writes "$b/flexdw/flexdw" "$W/ct" > "$W/ct-writes.log" 2>&1 || fail=1
+grep -v "give the raw disc's result\|so no changes" "$W/ct-writes.log"
+echo "$(grep -c "give the raw disc's result" "$W/ct-writes.log") containers changed as their raw discs ($(grep -c 'so no changes' "$W/ct-writes.log") of discs with errors or read-only left alone)"
+timeout 900 python3 -I "$src/tests/containers_check.py" news "$b/flexdw/flexdw" "$W/ct-new" > "$W/ct-new.log" 2>&1 || fail=1
+grep -v ': new in ImageDisk' "$W/ct-new.log"; echo "$(grep -c ': new in ImageDisk' "$W/ct-new.log") presets made in ImageDisk and DSK files as their raw images"
 
 rm -rf "$W"
 echo; [ $fail -eq 0 ] && echo "ALL PASSED" || echo "SOME TESTS FAILED"

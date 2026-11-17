@@ -45,6 +45,8 @@ Help > About shows the version; Help > Licences shows the licences of the progra
 |---|---|
 | Raw FLEX image (`.dsk`, as most FLEX emulators write it), in whatever geometry the disc's System Information Record gives (tried on discs of 20 to 77 tracks and 10 to 36 sectors a track) | read and write |
 | Raw UniFLEX image (`.dsk`: 8-inch floppies and Winchester hard discs, as emulators write them) | read and write |
+| FLEX and UniFLEX discs in ImageDisk (`.imd`), DSK or extended DSK files, including a double-density disc's single-density track 0 | read and write; new discs too |
+| FLEX and UniFLEX discs in TeleDisk (`.td0`) files | read; Save As makes a copy that can be changed |
 | OS-9 discs | recognised and named, not opened |
 
 A disc with a broken chain opens read-only with the fault named (Tools > Check disc); a file whose chain is broken is
@@ -61,7 +63,11 @@ Record gives opens read-only too.
 * **Volume name**: the name (up to 8 characters) and number in the System Information Record.
 * **New disc image**: TSC's formats and the shapes of real FLEX discs (5¼-inch 35 x 10, 35 x 18, 35 x 20, 40 x 10,
   40 x 20 and 40 x 36; 8-inch 77 x 15, 77 x 26, 77 x 30 and 77 x 52), laid out as FLEX's NEWDISK lays a disc out. On a
-  double-density disc whose track 0 is single density, the image pads track 0 to a full track, as emulators expect.
+  double-density disc whose track 0 is single density, a raw image pads track 0 to a full track, as emulators expect;
+  choose ImageDisk or DSK in the file dialog to get the disc itself, sides, density and a single-density track 0 as
+  TSC's format has them.
+* **Save As** a disc held in an ImageDisk, DSK or TeleDisk file as ImageDisk, DSK or raw; a raw image is saved as raw
+  (it doesn't say how its sectors lie on the disc). `flexdw convert` does the same.
 * **The boot loader.** FLEX's boot loader is TSC's own code, so the program carries none: a new disc works under FLEX
   but doesn't start it. To make a disc that starts FLEX, copy the loader from a FLEX system disc you have (New disc
   image, or Tools > Copy boot loader from), put FLEX.SYS on the disc, and link the loader to it (Tools > Link boot

@@ -61,7 +61,8 @@ always 256 bytes, and a double-density disc's track 0 is single density (below).
   geometry gives exactly the file's size.
 * On a double-sided disc FLEX numbers the sectors of both sides as one track. **FLEX** (TSC NEWDISK): side 1's sectors
   carry the IDs that follow side 0's (11-20 on a 10-sector side), so a container's sector IDs are the logical ones.
-* Only raw images are read so far. ImageDisk or DSK files of FLEX discs have not turned up yet.
+* **ImageDisk, DSK and TeleDisk** files (series `containers`, 16 Nov 2026): see "In ImageDisk, DSK and TeleDisk files"
+  below. None among the samples; read, written and made by the program.
 * Sectors are stored in logical order. **The Guide** (9.4): TSC formats a track with its sectors interleaved (5.25":
   physical 1-10 hold logical 1 3 5 7 9 2 4 6 8 10; 8": 1 6 11 3 8 13 5 10 15 2 7 12 4 9 14), so a container that
   keeps physical order (ImageDisk) must be read by sector ID, not by position.
@@ -97,6 +98,35 @@ An image of such a disc holds track 0 in one of two ways, and the program reads 
 
 Other double-density formats keep track 0 double density: **seen** on FHL Color FLEX's FLX505 and FLX503TX (40 x 36,
 the directory to 0/36).
+
+### In ImageDisk, DSK and TeleDisk files (series `containers`)
+
+A container records each track as it is on the disc: its sectors' IDs, sizes and order round the track, and (ImageDisk)
+its density and data rate. FLEX asks the controller for a sector by its ID, a cylinder's sectors numbered 1 up across
+both sides, so the disc is the container's tracks cylinder by cylinder, side 0 then side 1, each side's sectors in ID
+order (never in the order they are stored round the track: TSC's interleave, above). A single-density track 0 is a
+track of fewer sectors; the program reads the disc as a raw image whose track 0 is stored at its own size (the core's
+`Container::setOwnTrack0`, core v1.2.0), so everything above about such images holds: the SIR's geometry must be
+exactly the disc, and the directory end at track 0's last sector.
+
+* **Detection** is the raw file's on the container's disc: certain when the SIR's geometry is exactly the disc (a short
+  single-density track 0 counted at its own size), possible when it isn't (then read-only). Sector IDs that aren't
+  numbered 1, 2, 3 ... on each cylinder (each side from 1, say) are noted in the detection; the disc is still read in
+  that order.
+* **Changes** are written into the same sectors of the same container: every track keeps its density, sector IDs and
+  order, and an ImageDisk file's untouched tracks are written back byte for byte.
+* **Save As** a disc in a container: ImageDisk, extended DSK, standard DSK (every track one size: not with a
+  single-density track 0) or raw (track 0 at its own size). A raw image is saved as raw only: it doesn't say how its
+  sectors lie on the disc. A TeleDisk file is read-only (Save As makes a copy that can be changed).
+* **New discs** in ImageDisk or DSK files are the disc TSC's format describes: 10 sectors a side single density (FM)
+  and 18 double (MFM) at 250 kbit/s on 5.25" discs, 15 and 26 at 500 kbit/s on 8" discs, side 1 numbered on from side
+  0, a double-density disc's track 0 single density with 10 (5.25") or 15 (8") sectors a side, except 40 x 36 (the
+  shape of FLX505 and FLX503TX, double density on track 0 too). Sectors in ID order round the track (the core lays out
+  no interleave). A raw new disc keeps a short track 0 padded, as before.
+* **CPC DSK has no field for FM**: a single-density track 0 reads back as MFM from any DSK file (the data is the same).
+* **Checked** against third-party files (`design/test-scripts/containers/check3p.py`): hxcfe (HxC Floppy Emulator)
+  ImageDisk and CPC DSK files of FLEX discs through HxC's own FLEX layouts and layouts written for the check, and
+  samdisk's extended DSK files; hxcfe 2.14.6.3's faults are listed in `hxc-bugs.md` there.
 
 ## Sectors
 

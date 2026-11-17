@@ -251,7 +251,7 @@ dw::DragSpec MainWindow::dragSpec() const {
 
 void MainWindow::openDialog() {
     const QString p = QFileDialog::getOpenFileName(this, "Open a FLEX or UniFLEX disc image", AppSettings().value("lastDir").toString(),
-                                                   "FLEX and UniFLEX disc images (" + dw::anyCase("*.dsk *.flx *.img") + ");;All files (*)");
+                                                   "FLEX and UniFLEX disc images (" + dw::anyCase("*.dsk *.flx *.img *.imd *.td0") + ");;All files (*)");
     if (p.isEmpty()) return;
     AppSettings().setValue("lastDir", QFileInfo(p).absolutePath());
     openInWindow(p);
@@ -297,14 +297,26 @@ void MainWindow::afterOpen(const QString &) { refresh(); }
 
 bool MainWindow::keepBackup() const { return m_optBackup->isChecked(); }
 
+// A raw image is saved as raw only (it doesn't say how its sectors lie on the disc). A disc in an ImageDisk, DSK or
+// TeleDisk file can go into any of them or raw, as CP/M Disk Wrangler offers: the filter chosen decides the kind, never
+// the name typed, and the dialog starts on the image's own kind (TeleDisk: ImageDisk).
 bool MainWindow::askSaveAs(QString *path, dw::device::Kind *kind) {
-    QString filter = "Raw FLEX image (" + dw::anyCase("*.dsk *.flx *.img") + ")";
-    const QString p = QFileDialog::getSaveFileName(this, "Save as", QFileInfo(m_doc.path()).absolutePath() + "/" +
-                                                   QFileInfo(m_doc.path()).completeBaseName() + "-copy." + QFileInfo(m_doc.path()).suffix(),
-                                                   filter, &filter);
+    const QString raw = "Raw FLEX image (" + dw::anyCase("*.dsk *.flx *.img") + ")";
+    const QString imd = "ImageDisk (*.imd)", edsk = "Extended DSK image (*.dsk)", sdsk = "Standard DSK image (*.dsk)";
+    const QFileInfo fi(m_doc.path());
+    const dw::device::Kind own = m_doc.container().kind();
+    QString filter = raw, filters = raw;
+    QString name = fi.completeBaseName() + "-copy." + fi.suffix();
+    if (own != dw::device::Kind::Raw) {
+        filters = imd + ";;" + edsk + ";;" + sdsk + ";;" + raw;
+        filter = own == dw::device::Kind::Dsk ? sdsk : own == dw::device::Kind::Edsk ? edsk : imd;
+        if (own == dw::device::Kind::Td0) name = fi.completeBaseName() + ".imd";
+    }
+    const QString p = QFileDialog::getSaveFileName(this, "Save as", fi.absolutePath() + "/" + name, filters, &filter);
     if (p.isEmpty()) return false;
     *path = p;
-    *kind = dw::device::Kind::Raw;
+    *kind = filter == imd ? dw::device::Kind::Imd : filter == edsk ? dw::device::Kind::Edsk : filter == sdsk ? dw::device::Kind::Dsk
+                                                                                                   : dw::device::Kind::Raw;
     return true;
 }
 
@@ -509,6 +521,23 @@ bool MainWindow::volumeEditor(int, const QString &, VolumeEdit *edit) {
     return true;
 }
 
+// The Disc information box's container line: the kind of file and its size; for an ImageDisk, DSK or TeleDisk file the
+// disc it records (cylinders, sides, sectors a side, and cylinder 0's own shape).
+static QString containerLine(const dw::device::Container &c) {
+    QString l = QString("<b>Container:</b> %1, %2 bytes").arg(dw::device::kindName(c.kind())).arg(QFileInfo(c.path()).size());
+    dw::device::RawLayout sl;
+    if (c.kind() != dw::device::Kind::Raw && c.storedLayout(&sl)) {
+        l += QString("; %1 cylinders, %2 side%3, %4 sectors of %5 bytes a side").arg(sl.cyls).arg(sl.heads).arg(sl.heads == 1 ? "" : "s")
+                 .arg(sl.sectrk).arg(sl.seclen);
+        if (sl.t0sectrk) {
+            const dw::device::Track *t = c.track(0, 0);
+            const bool fm = t && t->mode >= 0 && t->mode <= 2;
+            l += QString(" (cylinder 0: %1 of %2%3)").arg(sl.t0sectrk).arg(sl.t0seclen).arg(fm ? ", single density" : "");
+        }
+    }
+    return l;
+}
+
 void MainWindow::discInfo() {
     if (!hasDisc()) return;
     if (hasUniflex()) { uniflexInfo(); return; }
@@ -516,10 +545,11 @@ void MainWindow::discInfo() {
     const Flex::Sir &s = d.sir();
     QStringList l;
     l << "<h3>" + QFileInfo(m_doc.path()).fileName().toHtmlEscaped() + "</h3>";
-    l << QString("<b>Container:</b> %1, %2 bytes").arg(dw::device::kindName(m_doc.container().kind())).arg(m_doc.container().rawFileSize());
+    l << containerLine(m_doc.container());
     l << QString("<b>Geometry (from the SIR):</b> %1 tracks (0-%2) of %3 sectors of 256 bytes").arg(d.tracks()).arg(s.lastTrack).arg(s.sectors);
     if (d.shortTrack0())
-        l << QString("<b>Track 0:</b> %1 sectors, stored at its own size (a double-density disc's single-density track 0)").arg(d.track0Sectors());
+        l << QString("<b>Track 0:</b> %1 sectors, %2 (a double-density disc's single-density track 0)").arg(d.track0Sectors())
+                 .arg(m_doc.container().kind() == dw::device::Kind::Raw ? "stored at its own size" : "fewer than the other tracks");
     l << QString("<b>Volume:</b> \"%1\", number %2").arg(s.labelText().toHtmlEscaped()).arg(s.volumeNumber);
     l << QString("<b>Made:</b> %1").arg(s.date().isValid() ? s.date().toString("d MMMM yyyy") : QString("no date"));
     l << QString("<b>Free:</b> %1 sectors, the free chain from %2 to %3").arg(s.freeCount).arg(s.firstFree.toString(), s.lastFree.toString());
@@ -590,7 +620,7 @@ void MainWindow::newImageDialog() {
     bootRow->addWidget(browse);
     connect(browse, &QPushButton::clicked, &d, [&] {
         const QString p = QFileDialog::getOpenFileName(&d, "Copy the boot loader from a FLEX disc image", QFileInfo(boot->text()).absolutePath(),
-                                                       "FLEX disc images (" + dw::anyCase("*.dsk *.flx *.img") + ");;All files (*)");
+                                                       "FLEX disc images (" + dw::anyCase("*.dsk *.flx *.img *.imd *.td0") + ");;All files (*)");
         if (!p.isEmpty()) boot->setText(p);
     });
     fl->addRow("Shape", shape);
@@ -631,20 +661,31 @@ void MainWindow::newImageDialog() {
     const dw::fs::Preset *chosen = Flex::findPreset(id);
     const bool uf = chosen && chosen->fsId == "uniflex";
     const QString base = name->text().trimmed().isEmpty() ? QString(uf ? "uniflex" : "flex") : name->text().trimmed().toLower();
+    // the kind of file comes from the filter chosen, never the name typed (as Save As); raw first, as before
+    const QString raw = (uf ? "Raw UniFLEX image (" : "Raw FLEX image (") + dw::anyCase("*.dsk *.flx *.img") + ")";
+    const QString imd = "ImageDisk (*.imd)", edsk = "Extended DSK image (*.dsk)", sdsk = "Standard DSK image (*.dsk)";
+    QStringList filters{raw};
+    if (chosen && chosen->containers.contains("imd")) filters << imd;
+    if (chosen && chosen->containers.contains("edsk")) filters << edsk;
+    if (chosen && chosen->containers.contains("dsk")) filters << sdsk;
+    QString filter = raw;
     const QString p = QFileDialog::getSaveFileName(this, "New disc image", st.value("lastDir").toString() + "/" + base + ".dsk",
-                                                   (uf ? "Raw UniFLEX image (" : "Raw FLEX image (") + dw::anyCase("*.dsk *.flx *.img") + ")");
+                                                   filters.join(";;"), &filter);
     if (p.isEmpty()) return;
     st.setValue("lastDir", QFileInfo(p).absolutePath());
+    const dw::device::Kind kind = filter == imd ? dw::device::Kind::Imd : filter == edsk ? dw::device::Kind::Edsk
+                                : filter == sdsk ? dw::device::Kind::Dsk : dw::device::Kind::Raw;
     QString err;
-    if (!newImage(p, id, name->text(), number->value(), uf ? QString() : boot->text().trimmed(), &err)) message("New disc image", err);
+    if (!newImage(p, id, name->text(), number->value(), uf ? QString() : boot->text().trimmed(), &err, kind)) message("New disc image", err);
 }
 
-bool MainWindow::newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err) {
+bool MainWindow::newImage(const QString &path, const QString &presetId, const QString &name, int number, const QString &bootSource, QString *err,
+                          dw::device::Kind kind) {
     const dw::fs::Preset *p = Flex::findPreset(presetId);
     if (!p) { *err = "no such shape: " + presetId; return false; }
     QByteArray boot;
     if (!bootSource.isEmpty() && !Flex::readBootLoader(bootSource, &boot, err)) return false;
-    if (!Flex::createBlank(path, *p, name, number, dw::now().date(), boot, err)) return false;
+    if (!Flex::createBlank(path, *p, name, number, dw::now().date(), boot, err, kind)) return false;
     MainWindow *w = m_doc.isOpen() ? static_cast<MainWindow *>(createWindow()) : this;
     if (!w->openFile(path)) { *err = path + " was made but couldn't be opened"; return false; }
     const QString loader = p->fsId == "uniflex" ? QString() : boot.isEmpty() ? QString(", no boot loader") : ", with the boot loader of " + QFileInfo(bootSource).fileName();
@@ -771,7 +812,7 @@ bool MainWindow::makeDirectory(const dw::fs::Path &dir, const QString &name, QSt
 void MainWindow::copyBootLoaderDialog() {
     AppSettings st;
     const QString p = QFileDialog::getOpenFileName(this, "Copy the boot loader from a FLEX disc image", st.value("bootSource").toString(),
-                                                   "FLEX disc images (" + dw::anyCase("*.dsk *.flx *.img") + ");;All files (*)");
+                                                   "FLEX disc images (" + dw::anyCase("*.dsk *.flx *.img *.imd *.td0") + ");;All files (*)");
     if (p.isEmpty()) return;
     st.setValue("bootSource", p);
     QString done, err;
@@ -968,8 +1009,7 @@ void MainWindow::uniflexInfo() {
     auto name = [](const QString &n) { return n.isEmpty() ? QString("none") : "\"" + n.toHtmlEscaped() + "\""; };
     QStringList l;
     l << "<h3>" + QFileInfo(m_doc.path()).fileName().toHtmlEscaped() + "</h3>";
-    l << QString("<b>Container:</b> %1, %2 bytes (%3 blocks of 512)").arg(dw::device::kindName(m_doc.container().kind()))
-             .arg(m_doc.container().rawFileSize()).arg(fs.imageBlocks());
+    l << containerLine(m_doc.container()) + QString(" (%1 blocks of 512)").arg(fs.imageBlocks());
     l << QString("<b>Pack name:</b> %1; <b>file system:</b> %2, number %3").arg(name(s.packNameText()), name(s.fsNameText())).arg(s.number);
     l << QString("<b>Volume:</b> blocks 0-%1: the boot block, the SIR, %2 blocks of fdns (%3 fdns), then the files from block %4")
              .arg(s.lastBlock).arg(s.fdnBlocks).arg(s.fdnCount()).arg(s.firstDataBlock());

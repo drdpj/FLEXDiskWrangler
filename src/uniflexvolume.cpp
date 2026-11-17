@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "uniflexvolume.h"
+#include "flexvolume.h"
 
 #include <diskwrangler/app/clock.h>
 
@@ -286,7 +287,11 @@ static bool padded(const QByteArray &b) {
 }
 
 QVector<dw::fs::Candidate> UniFlexProbe::probe(const dw::fs::ProbeContext &ctx) const {
-    if (!ctx.container || ctx.container->kind() != dw::device::Kind::Raw) return {};
+    if (!ctx.container) return {};
+    if (ctx.container->kind() != dw::device::Kind::Raw) {
+        dw::device::RawLayout l;
+        if (!ctx.container->storedLayout(&l) || l.seclen != BlockSize || l.t0sectrk) return {};   // one density throughout (the kernel's driver)
+    }
     const qint64 size = ctx.size();
     if (size < 3 * BlockSize) return {};
     const QByteArray sb = ctx.stored(qint64(SirBlock) * BlockSize, BlockSize);
@@ -322,7 +327,7 @@ QVector<dw::fs::Candidate> UniFlexProbe::probe(const dw::fs::ProbeContext &ctx) 
     const qint64 blocks = size / BlockSize, want = r.sir.imageBlocks();
     r.exact = size % BlockSize == 0 && blocks == want;
     const QString name = !r.sir.packNameText().isEmpty() ? r.sir.packNameText() : r.sir.fsNameText();
-    c.description = QString("UniFLEX disc%1, %2 blocks").arg(name.isEmpty() ? QString() : " " + name).arg(r.sir.volumeBlocks());
+    c.description = QString("UniFLEX disc%1, %2 blocks").arg(name.isEmpty() ? QString() : " " + name).arg(r.sir.volumeBlocks()) + Flex::containerPhrase(ctx.container->kind());
     c.tier = !dot ? dw::fs::Tier::Possible : r.exact ? dw::fs::Tier::Certain : blocks >= r.sir.volumeBlocks() ? dw::fs::Tier::Likely : dw::fs::Tier::Possible;
     c.evidence << QString("block 1 is a UniFLEX SIR: %1 fdn blocks, a volume of %2 blocks").arg(r.sir.fdnBlocks).arg(r.sir.volumeBlocks())
                << (dot ? QString("fdn 1 is the root directory") : QString("fdn 1 is a directory"));
@@ -330,7 +335,7 @@ QVector<dw::fs::Candidate> UniFlexProbe::probe(const dw::fs::ProbeContext &ctx) 
     if (r.exact) c.evidence << (r.sir.swapSize ? QString("which with %1 blocks of swap space is exactly the file's size").arg(r.sir.swapSize)
                                                : QString("which is exactly the file's size"));
     else c.notes << QString("the file is %1 bytes; the SIR's volume%2 is %3").arg(size).arg(r.sir.swapSize ? " and swap space" : "").arg(want * BlockSize);
-    c.safeToWrite = false;                       // read-only in this version
+    c.safeToWrite = blocks >= r.sir.volumeBlocks();   // as OpenedDisc: read-only when the file is shorter than its volume
     c.data = r;
     return {c};
 }

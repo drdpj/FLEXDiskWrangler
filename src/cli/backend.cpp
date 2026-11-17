@@ -17,6 +17,8 @@
  */
 #include "backend.h"
 
+#include <QFileInfo>
+
 #include <diskwrangler/app/clock.h>
 
 #include "../flexvolume.h"
@@ -85,7 +87,24 @@ public:
     // nor can a UniFLEX file shorter than its volume
     QString readOnlyWhy() const override {
         if (od.uniflex()) return od.uniflex()->shortImage() ? "the image file is shorter than the UniFLEX volume in its System Information Record" : QString();
-        return od.writableGeometry() ? QString() : Flex::OpenedDisc::GeometryText;
+        return od.writableGeometry() ? QString() : od.geometryWhy();
+    }
+    // convert: to another container (a raw image only to raw), the source untouched
+    bool convertTo(const QString &out, const ConvertOptions &o, QJsonObject *result, QString *err, int *exit) override {
+        using dw::device::Kind;
+        if (!o.toSides.isEmpty()) { *err = "a FLEX or UniFLEX disc has no side order to change"; *exit = ExitUsage; return false; }
+        Kind to = od.container().kind();
+        if (o.container == "raw") to = Kind::Raw;
+        else if (o.container == "imd") to = Kind::Imd;
+        else if (o.container == "dsk") to = Kind::Dsk;
+        else if (o.container == "edsk") to = Kind::Edsk;
+        if (!od.canSaveAs(to, err)) { *exit = ExitUnsupported; return false; }
+        if (!od.convertTo(out, to, err)) { *exit = ExitSave; return false; }
+        QJsonObject r;
+        r["container"] = dw::device::kindName(to);
+        r["size"] = double(QFileInfo(out).size());
+        *result = r;
+        return true;
     }
 };
 
@@ -140,13 +159,21 @@ QJsonArray Backend::formats() const {
 }
 
 // A blank disc as NEWDISK lays one out, or a UniFLEX one as TSC's formatter does (Flex::createBlank), named by --title
-// (the pack name), number 0, dated now; no boot loader.
+// (the pack name), number 0, dated now; no boot loader. --container: raw (the default), imd, edsk, or dsk (UniFLEX).
 bool Backend::create(const QString &file, const NewOptions &n, QString *err, int *exit) {
     const dw::fs::Preset *p = Flex::findPreset(n.format);
     if (!p) { *err = QString("unknown format '%1' (flexdw new --list)").arg(n.format); *exit = ExitUsage; return false; }
     QByteArray name;
     if (!(p->fsId == "uniflex" ? Flex::uniflexPackBytes(n.title, &name, err) : Flex::volumeNameBytes(n.title, &name, err))) { *exit = ExitUsage; return false; }
-    if (!Flex::createBlank(file, *p, n.title, 0, dw::now().date(), QByteArray(), err)) { *exit = ExitSave; return false; }
+    using dw::device::Kind;
+    const QString c = n.container.isEmpty() ? QString("raw") : n.container;
+    const Kind kind = c == "imd" ? Kind::Imd : c == "edsk" ? Kind::Edsk : c == "dsk" ? Kind::Dsk : Kind::Raw;
+    if (!p->containers.contains(c)) {
+        *err = QString("%1 is made as %2, not %3").arg(n.format, p->containers.join(", "), c);
+        *exit = ExitUsage;
+        return false;
+    }
+    if (!Flex::createBlank(file, *p, n.title, 0, dw::now().date(), QByteArray(), err, kind)) { *exit = ExitSave; return false; }
     return true;
 }
 

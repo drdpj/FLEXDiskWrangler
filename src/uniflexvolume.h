@@ -81,11 +81,12 @@ struct ProbeResult {
     bool exact = false;                          // the file holds exactly the SIR's volume and swap space
 };
 
-// A UniFLEX disc in a raw file: a SIR in block 1 whose fdn list, volume, counts and lists are UniFLEX's, and an fdn 1
+// A UniFLEX disc: a SIR in block 1 whose fdn list, volume, counts and lists are UniFLEX's, and an fdn 1
 // that is a directory. Certain when its first entry is "." naming itself and the file is exactly the SIR's volume and
 // swap space; Likely when the file holds at least the volume; Possible when it is cut short, or the root directory
 // doesn't start with "." (a disc whose root was never written: it opens, and the check says so). A SIR that names a
-// file system and a pack but describes none is named, unsupported (Possible). data is a ProbeResult.
+// file system and a pack but describes none is named, unsupported (Possible). In an ImageDisk, DSK or TeleDisk file of
+// 512-byte sectors the same tests run on its stored bytes ("the file" is then the disc in it). data is a ProbeResult.
 class UniFlexProbe : public dw::fs::Probe {
 public:
     QString id() const override { return "uniflex"; }
