@@ -27,8 +27,9 @@ directories, renames and moves of files, access, owners, the SIR's names, new di
   "Consulted" table.
 * **Never commit third-party disc images**: the tests read the sample discs from outside the repo, and make their own
   synthetic ones (`tests/flex_check.py make`).
-* **`core/` is the git submodule DiskWranglerCore**, pinned to a tag (v1.1.1: the first with this program's installer AppId). Never edit files under `core/` from
-  here; a change the core needs is the owner's decision (the plan says to stop and ask).
+* **`core/` is the git submodule DiskWranglerCore**, shared with Acorn and CP/M Disk Wrangler and pinned to a tag (clone with
+  `--recurse-submodules`, or `git submodule update --init`; v1.1.1 was the first with this program's installer AppId).
+  Never edit files under `core/` from here; a change the core needs is the owner's decision (the plan says to stop and ask).
 
 ## Source map (program in `src/`, tests in `tests/`)
 | File | Role |

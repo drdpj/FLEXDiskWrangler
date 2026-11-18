@@ -102,8 +102,56 @@ text file keeps its CR line ends and its space compression (a TAB followed by th
 shows the text expanded. A random-access file comes out without its two sector-map sectors. Names are lower-cased,
 and the file gets the date from the directory.
 
-## The command-line program
-`flexdw` (installed beside the program) does the same from a terminal or a script, with the same checks:
+## Settings, and carrying the program with you
+Settings (the Tools options and the last folders used) live in the usual place for your system: the registry on
+Windows (`HKEY_CURRENT_USER\Software\flexdiskwrangler\flexdiskwrangler`),
+`~/Library/Preferences/com.flexdiskwrangler.flexdiskwrangler.plist` on macOS and
+`~/.config/flexdiskwrangler/flexdiskwrangler.conf` on Linux.
+
+To keep them with the program instead - on a USB stick, say - choose **File > Create local config file**. It writes
+`flexdiskwrangler.ini` beside the program (beside the `.exe`, the `.app` or the `.AppImage`) with a copy of the
+current settings, and uses it from then on; an empty file of that name does the same. Delete it to go back to the
+system's settings. Help > About says which is in use. Copies installed by the Windows installer or the `.deb` always
+use the system's settings, so they don't offer this.
+
+## Drag and drop between disc tools
+An ordinary drag between programs carries only a file's name and contents, but a file on a retro disc has more that
+matters: an Acorn file's load and execution addresses (without them a program may not run), its access bits and DFS
+directory letter, DOS attributes, a CP/M user number, a FLEX file's protection, a UniFLEX file's owner and access.
+The Disk Wranglers implement
+**[retro-files](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/retro-files-format.md)** (`application/x-retro-files+json`), an open format that carries these
+too:
+
+* **Nothing is lost between disc tools.** Drag a file between Acorn Disk Wrangler, CP/M Disk Wrangler and FLEX Disk
+  Wrangler, between two copies of one, or to any other tool that adopts the format, and its attributes go with it.
+  The receiving program converts what the destination can hold (an Acorn file's lock becomes CP/M's read-only flag,
+  for example) instead of guessing from a bare file.
+* **Nothing else breaks.** The same drag carries ordinary files, so dropping on your desktop, a file manager or any
+  other program works as usual.
+* **Any tool can join in.** It is a small, versioned JSON document with attributes grouped by filesystem (`acorn`,
+  `fat`, `cpm`, `flex`, `uniflex`, and `uef` for a tape's data as it is): a tool for another kind of disc adds its own
+  group and reads the ones it understands. The
+  [specification](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/retro-files-format.md) explains the format and why it exists.
+
+## Command line
+`flexdw` is the console version of this program: the same detection, the same checks and the same checked save, with
+no window, so it works in scripts. It has the form
+
+    flexdw [GLOBAL OPTIONS] COMMAND [OPTIONS] ARGS...
+
+Global options can come before or after the command. An image and a path are always separate arguments (`disc.dsk`,
+then `GAME.CMD`), never `disc.dsk:GAME.CMD`.
+
+**Where it's installed**
+* **Windows:** `flexdw.exe` sits beside `flexdiskwrangler.exe`, in the zip or in the installer's folder. Run it from
+  there, or add that folder to your PATH.
+* **macOS:** inside the app, at `Contents/MacOS/flexdw`. To run it from Terminal, make a link:
+  `sudo ln -s "/Applications/FLEX Disk Wrangler.app/Contents/MacOS/flexdw" /usr/local/bin/flexdw`
+* **Linux, `.deb`:** `/usr/bin/flexdw`, installed with the program.
+* **Linux, AppImage:** the AppImage runs the console program when it is started under the name `flexdw`, so make a
+  link to it: `ln -s flexdiskwrangler-<version>-linux-x86_64.AppImage flexdw`, then run `./flexdw`.
+
+**Examples:**
 
     flexdw info DISC.DSK          # what the disc is
     flexdw ls DISC.DSK            # the files
@@ -119,16 +167,34 @@ and the file gets the date from the directory.
 Add `--json` for output a program can read. The commands are those of the other Disk Wranglers' console programs
 ([cli.md](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/cli.md)).
 
-## Building
-Qt 6 (Qt 5.15 also works) and a C++17 compiler. Clone with the shared core:
+## Limitations
+* TeleDisk images can be read but not saved as TeleDisk (Save As makes an ImageDisk, DSK or raw copy).
+* OS-9 discs are recognised and named, not opened.
+* Deleted files can't be recovered yet (FLEX leaves their chains until the sectors are reused).
+* The program carries no boot loader: a new disc works under FLEX but doesn't start it until a loader is copied from
+  a FLEX system disc you have.
+* A disc with errors opens read-only; several of the surviving UniFLEX images were copied from running systems and
+  are inconsistent.
+
+## Building from source
+You need Qt 6 (or Qt 5.15) with its widgets module, and a C++17 compiler. Clone with the shared core:
 
     git clone --recurse-submodules https://github.com/drdpj/FLEXDiskWrangler.git
     cd FLEXDiskWrangler
-    qmake flexdiskwrangler.pro && make -j$(nproc)      # the window
-    qmake flexdw.pro && make -j$(nproc)                # the command-line program (in another build folder)
+    qmake flexdiskwrangler.pro && make -j$(nproc)  # or: cmake -S . -B build && cmake --build build -j$(nproc)
+    ./flexdiskwrangler [image ...]                 # each image opens in its own window
 
-or with CMake: `cmake -S . -B build && cmake --build build -j$(nproc)` (`-DUSE_QT5=ON` for Qt 5).
+The console program `flexdw` builds from `flexdw.pro` in a folder of its own (CMake builds it with the program).
+On Linux, `make install` (or `qmake PREFIX=$HOME/.local ...`, then `make install`, for just you) adds a menu entry
+so docks show the program's icon. [building.md](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/building.md)
+(in DiskWranglerCore, which is the `core/` submodule) covers Windows (MSYS2), macOS, Qt 5 (`-DUSE_QT5=ON` for
+CMake), and how the release builds are made and carry their licences.
+
+Working on the code? Start with [AGENTS.md](AGENTS.md): the design rules, the source map, the window and the tests.
+The formats are described in [docs/disc-format.md](docs/disc-format.md) and
+[docs/uniflex-format.md](docs/uniflex-format.md).
 
 ## Licence
-GNU General Public License v3 or later. Copyright (C) 2026 Daniel Jameson. Qt is used under the LGPL v3; see
-`THIRD-PARTY-NOTICES.md` and Help > Licences.
+Copyright (C) 2026 Daniel Jameson. Licensed under the GNU General Public License v3.0 or later - see
+[LICENSE](LICENSE). Uses Qt under the LGPL v3. Everything else that was used or consulted is listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
