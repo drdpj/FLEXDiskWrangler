@@ -102,7 +102,8 @@ in one folder).
 
 CI: `.github/workflows/build.yml` is the family's shared workflow, identical in the three repos (Windows, macOS and
 Linux packages on every push; a release on a `v*` tag, with a Windows installer, whose AppId for this program is in the
-core's `ci/installer.iss` since v1.1.1).
+core's `ci/installer.iss` since v1.1.1). The details for people are in `core/docs/building.md`; a 32-bit Windows 7
+build (not tried yet) in `core/docs/building-windows-32bit.md`.
 
 ## Test
 ```
