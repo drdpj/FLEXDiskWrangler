@@ -1,4 +1,4 @@
-[![Latest release](https://img.shields.io/github/v/release/drdpj/FLEXDiskWrangler?include_prereleases&label=release)](https://github.com/drdpj/FLEXDiskWrangler/releases)
+[![Latest release](https://img.shields.io/github/v/release/drdpj/FLEXDiskWrangler?label=release)](https://github.com/drdpj/FLEXDiskWrangler/releases/latest)
 
 # FLEX Disk Wrangler
 
@@ -21,8 +21,7 @@ disc changed here is the disc FLEX would have made. A disc is checked before eve
 back and checked before it replaces the original.
 
 ## Download
-Get the latest build from the [Releases page](https://github.com/drdpj/FLEXDiskWrangler/releases). The releases so
-far are release candidates, ahead of 1.0.0.
+Get the latest build from the [Releases page](https://github.com/drdpj/FLEXDiskWrangler/releases/latest).
 None of the builds are signed, so your system may warn you the first time you run it.
 
 * **Windows** (10 or later, 64-bit): run the `...-setup.exe` installer (it installs into Program Files; without

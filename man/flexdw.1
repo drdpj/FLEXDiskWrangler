@@ -3,6 +3,10 @@
 .\" Checked against the program by core/ci/check-manpage.sh (tests/run_all.sh): every command has a .SS of its own,
 .\" and every option the program takes, and only those, is named here.
 .TH FLEXDW 1 2026-11-24 "FLEX Disk Wrangler" "User Commands"
+.\" left-aligned (no stretched spaces), one space after a full stop, no hyphenation
+.ds AD l
+.ad l
+.ss 12 0
 .nh
 .SH NAME
 flexdw \- list, extract, add and change files on FLEX and UniFLEX disc images
@@ -131,8 +135,11 @@ for a directory), attributes (a UniFLEX file's access:
 for its owner,
 .B RWX
 for others), size and date.
-A FLEX file's size is in whole sectors
-.RB ( ~ ).
+A FLEX file's size is shown with a
+.B ~
+in front
+.RB ( ~504 ):
+FLEX keeps only whole sectors, so the true length isn't known.
 .BR \-R ", " \-\-recursive
 lists every directory below the path;
 .BR \-d ", " \-\-directory
@@ -454,16 +461,37 @@ The checked save failed; the original file is untouched.
 If set, the time used for new files' dates and ImageDisk headers, so that a run gives the same bytes every time.
 .SH EXAMPLES
 .EX
-flexdw info DISC.DSK                      # what the disc is
+# what the disc is
+flexdw info DISC.DSK
+
+# list it
 flexdw ls DISC.DSK
-flexdw get DISC.DSK / out                 # every file into the folder out
+
+# every file into the folder out
+flexdw get DISC.DSK / out
+
+# check the disc
 flexdw check DISC.DSK
+
+# add a file
 flexdw put DISC.DSK notes.txt /
+
+# see what a delete would do, without doing it
 flexdw \-\-dry\-run rm DISC.DSK OLD.TXT
+
+# a blank 40\-track FLEX disc called WORK
 flexdw new NEW.DSK \-\-format=flex\-40x10 \-\-title=WORK
-flexdw ls UNIFLEX.DSK \-R                  # a UniFLEX disc's whole tree
+
+# a UniFLEX disc's whole tree
+flexdw ls UNIFLEX.DSK \-R
+
+# a directory on a UniFLEX disc
 flexdw mkdir UNIFLEX.DSK /work
+
+# a blank UniFLEX disc as ImageDisk
 flexdw new NEW.IMD \-\-format=uniflex\-ds\-dd \-\-title=pack \-\-container=imd
+
+# the listing as JSON, for a script
 flexdw \-\-json ls DISC.DSK
 .EE
 .SH SEE ALSO
@@ -476,10 +504,11 @@ the other Disk Wranglers' console programs.
 .PP
 The full reference, with the JSON schema:
 .UR https://github.com/drdpj/DiskWranglerCore/blob/main/docs/cli.md
-.UE .
+.UE
+.PP
 The program:
 .UR https://github.com/drdpj/FLEXDiskWrangler
-.UE .
+.UE
 .SH AUTHOR
 Daniel Jameson.
 FLEX Disk Wrangler is free software under the GNU General Public License, version 3 or later.
