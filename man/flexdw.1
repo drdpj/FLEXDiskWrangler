@@ -1,0 +1,485 @@
+.\" flexdw(1) - FLEX Disk Wrangler's console program
+.\" Copyright (C) 2026 Daniel Jameson. GPL v3 or later.
+.\" Checked against the program by core/ci/check-manpage.sh (tests/run_all.sh): every command has a .SS of its own,
+.\" and every option the program takes, and only those, is named here.
+.TH FLEXDW 1 2026-11-24 "FLEX Disk Wrangler" "User Commands"
+.nh
+.SH NAME
+flexdw \- list, extract, add and change files on FLEX and UniFLEX disc images
+.SH SYNOPSIS
+.B flexdw
+.RI [ "global options" ]
+.I command
+.RI [ options ]
+.IR arguments ...
+.SH DESCRIPTION
+.B flexdw
+is the console version of FLEX Disk Wrangler: the same detection, the same checks and the same checked save as the
+window, with no display needed, so it works in scripts.
+It reads and writes discs of TSC's FLEX, in whatever geometry the disc's System Information Record gives, and of
+UniFLEX, TSC's multi-user system for the same 6809 machines (8-inch floppies and Winchester hard discs), changing
+them as FLEX and UniFLEX themselves do.
+The discs may be raw images
+.RI ( .dsk ,
+as most emulators write them), ImageDisk
+.RI ( .imd ),
+DSK or extended DSK files, or TeleDisk
+.RI ( .td0 )
+files, which can only be read.
+.PP
+Global options may come before or after the command.
+An image and a path on it are always separate arguments
+.RB ( "flexdw get disc.dsk GAME.CMD out/" ),
+never
+.IR image : path .
+.PP
+Each run opens the image, makes its changes as one transaction and saves once: the disc is checked first, the new
+file is written beside the old one and read back, then put in its place.
+If anything fails, the image is left exactly as it was.
+.SS Paths
+A FLEX disc has one directory:
+.B GAME.CMD
+or
+.BR /GAME.CMD .
+A UniFLEX disc is a tree:
+.BR /usr/bin/edit .
+The wildcards
+.B *
+and
+.B ?\&
+expand in
+.BR get ,
+.BR rm ,
+.B attr
+and
+.BR ls .
+.SH GLOBAL OPTIONS
+.TP
+.B \-\-json
+Write one JSON document on standard output (see
+.BR "JSON OUTPUT" )
+and nothing else there.
+.TP
+.B \-\-dry\-run
+Do everything, including every check, but write nothing.
+.TP
+.BI \-\-vol= NAME
+Which volume of the image:
+.B flex
+or
+.BR uniflex .
+.B all
+lists every volume, for
+.B ls
+and
+.BR info .
+.TP
+.BI \-\-fs= ID
+Read the image as this filesystem, whatever detection says
+.RB ( info
+lists the readings and their ids).
+.TP
+.B \-\-backup
+Keep the old file as
+.IB name .bak
+when saving.
+.TP
+.BR \-q ", " \-\-quiet
+No output on success.
+.TP
+.BR \-f " \fINAME\fR, " \-\-format= \fINAME\fR
+On
+.BR new ,
+the format to make (one of those
+.B new \-\-list
+gives).
+.TP
+.BR \-h ", " \-\-help
+Print the commands and global options;
+.IB command " \-\-help"
+prints that command's own options.
+.TP
+.B \-\-version
+Print the version and the DiskWranglerCore version.
+.SH COMMANDS
+.SS info
+.B flexdw info
+.I image
+.PP
+What the image is: the container, the detection result and the other readings, and the volume with its name and
+free space.
+.SS check
+.B flexdw check
+.I image
+.RB [ \-\-strict ]
+.PP
+Check the disc's whole filesystem.
+Exit status 4 if it fails;
+.B \-\-strict
+counts warnings as failures too.
+.SS ls
+.B flexdw ls
+.I image
+.RI [ path ]
+.RB [ \-R ]
+.RB [ \-d ]
+.PP
+List a directory: name, type
+.RB ( D
+for a directory), attributes (a UniFLEX file's access:
+.B rwx
+for its owner,
+.B RWX
+for others), size and date.
+A FLEX file's size is in whole sectors
+.RB ( ~ ).
+.BR \-R ", " \-\-recursive
+lists every directory below the path;
+.BR \-d ", " \-\-directory
+shows the path itself.
+.SS get
+.B flexdw get
+.I image path... hostdir
+.PP
+Extract files and directories into the host folder
+.IR hostdir ,
+or, with
+.B \-
+as
+.IR hostdir ,
+write one file to standard output.
+Names are lower-cased.
+A FLEX file comes out in whole sectors, a random-access file without its sector map.
+.RS
+.TP
+.BI \-\-manifest= FILE
+Also write a retro-files manifest of what was extracted.
+.TP
+.BR \-\-replace ", " \-\-skip
+What to do with a host file of the same name: replace it, or leave it and go on.
+Without either, the run stops with exit status 5.
+.RE
+.SS put
+.B flexdw put
+.I image host... dir
+.PP
+Add host files and folders to
+.I dir
+.RB ( /
+on a FLEX disc).
+Names are made valid for the filesystem; a name that clashes within one
+.B put
+gets
+.BR ~1 ,
+.BR ~2 ...
+A UniFLEX file gets the time it was written, as UniFLEX's
+.B copy
+gives it.
+.RS
+.TP
+.BR \-\-replace ", " \-\-skip
+What to do when a file of that name is there.
+Without either, the run stops with exit status 5.
+.TP
+.B \-\-force
+Accepted as the other Disk Wranglers accept it; a FLEX file that is write-, delete- or read-protected still can't be
+replaced, as in FLEX: take the protection off with
+.B attr
+first.
+.TP
+.BI \-\-retro= FILE
+Take names and attributes (a FLEX file's protection, a UniFLEX file's owner and access) from a retro-files manifest
+or JSON file (the drag-and-drop format shared with Acorn Disk Wrangler and CP/M Disk Wrangler); may be given more
+than once.
+.TP
+.BI \-\-letters= dirs | flatten
+Accepted as the other Disk Wranglers accept it (Acorn DFS files arriving on an ADFS disc); it changes nothing here.
+.RE
+.SS rm
+.B flexdw rm
+.I image path...
+.RB [ \-r ]
+.RB [ \-\-force ]
+.PP
+Delete files.
+.BR \-r ", " \-\-recursive
+deletes a UniFLEX directory with everything in it.
+A protected FLEX file can't be deleted, even with
+.BR \-\-force .
+.SS mkdir
+.B flexdw mkdir
+.I image path...
+.RB [ \-p ]
+.PP
+Make UniFLEX directories;
+.BR \-p ", " \-\-parents
+makes the ones above too.
+FLEX has none (exit status 6).
+.SS mv
+.B flexdw mv
+.I image from to
+.PP
+Rename a file, or, on UniFLEX, move a file or directory to another directory (a directory's
+.B ..\&
+is rewritten).
+.SS attr
+.B flexdw attr
+.I image path...
+.RB [ \-\-set
+.IR key = value ]...
+.PP
+Show a file's attributes, or change them with
+.BR \-\-set ,
+which may be given more than once.
+On FLEX the protection:
+.BR write ,
+.BR delete ,
+.B read
+and
+.B catalog
+(shown:
+.B random
+and
+.BR sectors ).
+On UniFLEX:
+.BR ownerRead ,
+.BR ownerWrite ,
+.BR ownerExecute ,
+.BR othersRead ,
+.BR othersWrite ,
+.BR othersExecute ,
+.B setUserId
+and
+.B owner
+(shown:
+.BR links ,
+.B fdn
+and
+.BR type ).
+Yes/no values are
+.BR yes / no ,
+.BR on / off ,
+.BR true / false
+or
+.BR 1 / 0 .
+An unknown key is refused with the list of the filesystem's keys.
+.SS title
+.B flexdw title
+.I image
+.RI [ text ]
+.PP
+Show or set the volume name (FLEX, up to 8 characters) or pack name (UniFLEX).
+.SS boot
+.B flexdw boot
+.I image
+.RI [ option ]
+.PP
+FLEX and UniFLEX discs have no boot option: this exists for the other Disk Wranglers and fails with exit status 6.
+.SS new
+.B flexdw new
+.I file
+.BI \-\-format= ID
+.RI [ options ]
+.br
+.B flexdw new \-\-list
+.PP
+Make a blank disc as FLEX's NEWDISK lays one out, or a UniFLEX one as TSC's formatter does
+.RB ( uniflex\-ss\-sd ,
+.BR uniflex\-ss\-dd ,
+.BR uniflex\-ds\-sd ,
+.BR uniflex\-ds\-dd ).
+A new UniFLEX disc has no swap space and no bootstrap: it holds files but doesn't start UniFLEX.
+The disc is checked and opened again before it is kept.
+.RS
+.TP
+.B \-\-list
+List the formats.
+.TP
+.BI \-\-title= TEXT
+The volume name (FLEX) or pack name (UniFLEX).
+.TP
+.BI \-\-container= KIND
+.B raw
+(the default),
+.B imd
+(ImageDisk),
+.B dsk
+or
+.BR edsk ,
+where the format can be held in it.
+An ImageDisk file has the sides, density and single-density track 0 TSC's format has.
+.TP
+.B \-\-replace
+Replace the file if it exists.
+.RE
+.SS convert
+.B flexdw convert
+.I image
+.RI [ out ]
+.RB [ \-\-container= \fIKIND\fR]
+.PP
+Write the disc in another container
+.RB ( raw ,
+.BR imd ,
+.B dsk
+or
+.BR edsk ),
+to
+.I out
+or over the image.
+TeleDisk files can't be written, so convert one to change it.
+.B \-\-replace
+replaces
+.I out
+if it exists.
+.SS copy
+.B flexdw copy
+.I src dest path...
+.RB [ \-\-into= \fIDIR\fR]
+.RB [ \-\-to\-vol= \fINAME\fR]
+.PP
+Copy files from one image to another (or within one), mapping names and attributes as drag and drop does.
+.B \-\-into
+names the directory they go to,
+.B \-\-to\-vol
+the volume of
+.IR dest .
+.BR \-\-replace ,
+.BR \-\-skip ,
+.B \-\-force
+and
+.B \-\-letters
+are as for
+.BR put .
+.SS script
+.B flexdw script
+.I image
+.RI [ file | \- ]
+.PP
+Run many commands on one image with one save.
+Each line of
+.I file
+(or standard input) is a command without
+.B flexdw
+and the image
+.RB ( "put host/notes.txt /" );
+lines starting
+.B #
+are comments.
+Global options go on the
+.B script
+command itself;
+.BR new ,
+.B convert
+and
+.B script
+can't be used in a script.
+It stops at the first line that fails, and then nothing is saved.
+.SH JSON OUTPUT
+With
+.BR \-\-json ,
+standard output is one JSON document (schema 1):
+.BR schema ,
+.BR tool ,
+.BR command ,
+.BR image ,
+.BR vol ,
+.BR ok ,
+.BR exit ,
+.BR dryRun ,
+.BR saved ,
+.B result
+(which depends on the command),
+.B changes
+(one per file added, deleted, renamed or changed),
+.B warnings
+and
+.B error
+(null, or
+.BR code ,
+.BR kind ,
+.B message
+and
+.BR path ).
+Scripts should read
+.B exit
+for the outcome and the rest for detail.
+Text output is for people and may change between versions; the JSON only gains fields.
+.SH EXIT STATUS
+.TP 4
+.B 0
+Success.
+.TP
+.B 1
+The operation failed (the disc is full, a bad name, a protected file, a file that can't be read).
+.TP
+.B 2
+Wrong arguments.
+.TP
+.B 3
+The image, a path on it, or a host file isn't there.
+.TP
+.B 4
+The disc fails its check, so nothing was written.
+.TP
+.B 5
+A name exists and neither
+.B \-\-replace
+nor
+.B \-\-skip
+was given.
+.TP
+.B 6
+Unsupported, or read-only: a TeleDisk file, something the filesystem can't do (a directory on FLEX).
+.TP
+.B 7
+The disc belongs to another Disk Wrangler (an Acorn or CP/M disc;
+.B info
+names it).
+.TP
+.B 8
+Two readings are equally likely: choose one with
+.BR \-\-fs .
+.TP
+.B 9
+Nothing recognised the disc
+.RB ( \-\-fs
+tries a reading anyway).
+.TP
+.B 10
+The checked save failed; the original file is untouched.
+.SH ENVIRONMENT
+.TP
+.B SOURCE_DATE_EPOCH
+If set, the time used for new files' dates and ImageDisk headers, so that a run gives the same bytes every time.
+.SH EXAMPLES
+.EX
+flexdw info DISC.DSK                      # what the disc is
+flexdw ls DISC.DSK
+flexdw get DISC.DSK / out                 # every file into the folder out
+flexdw check DISC.DSK
+flexdw put DISC.DSK notes.txt /
+flexdw \-\-dry\-run rm DISC.DSK OLD.TXT
+flexdw new NEW.DSK \-\-format=flex\-40x10 \-\-title=WORK
+flexdw ls UNIFLEX.DSK \-R                  # a UniFLEX disc's whole tree
+flexdw mkdir UNIFLEX.DSK /work
+flexdw new NEW.IMD \-\-format=uniflex\-ds\-dd \-\-title=pack \-\-container=imd
+flexdw \-\-json ls DISC.DSK
+.EE
+.SH SEE ALSO
+.BR flexdiskwrangler ,
+the program with a window;
+.BR acorndw (1)
+and
+.BR cpmdw (1),
+the other Disk Wranglers' console programs.
+.PP
+The full reference, with the JSON schema:
+.UR https://github.com/drdpj/DiskWranglerCore/blob/main/docs/cli.md
+.UE .
+The program:
+.UR https://github.com/drdpj/FLEXDiskWrangler
+.UE .
+.SH AUTHOR
+Daniel Jameson.
+FLEX Disk Wrangler is free software under the GNU General Public License, version 3 or later.

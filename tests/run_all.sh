@@ -50,6 +50,8 @@ tail -1 "$W/cli.log" | grep -q "^ALL PASSED" && echo "flexdw golden: $(grep -c '
 if command -v ldd >/dev/null 2>&1; then
   ldd "$b/flexdw/flexdw" | grep -qiE "QtGui|QtWidgets" && { echo "FAIL: flexdw links QtGui or QtWidgets"; fail=1; } || echo "flexdw links neither QtGui nor QtWidgets"
 fi
+# its manual page (the .deb's /usr/share/man/man1/flexdw.1.gz) names every command and option it has, and only those
+bash "$src/core/ci/check-manpage.sh" "$b/flexdw/flexdw" "$src/man/flexdw.1" || fail=1
 
 step "the independent FLEX reader (flex_check.py) against flexdw: synthetic discs"
 (cd "$W/syn" && timeout 600 python3 -I "$src/tests/flex_check.py" compare "$b/flexdw/flexdw" *.dsk noise.bin) > "$W/syn-compare.log" 2>&1 || fail=1

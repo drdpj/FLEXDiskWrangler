@@ -45,6 +45,7 @@ directories, renames and moves of files, access, owners, the SIR's names, new di
 | `viewer.*` | View: the core's viewer dialog with FLEX's text view, or UniFLEX's (CR line ends, TABs kept: the dialog's context `fs` says which), in place of the plain one |
 | `icon.*` | the 5.25-inch floppy icon (QPainter); `icons/` holds the PNGs (`tests/mkicon`), the `.ico` / `.icns` (Pillow) and a hand-written SVG that renders the same |
 | `cli/` | `flexdw`: `FlexCli::Backend` (open through the same detection and `OpenedDisc`; `new` from the presets, `--title` the volume or pack name; a file whose size isn't its geometry read-only); the commands are the core's |
+| `man/flexdw.1` (top level) | `flexdw`'s manual page (man(7) macros), installed by the `.deb`. `core/ci/check-manpage.sh` (in `tests/run_all.sh` and the Linux workflow) fails until every command has its `.SS` and every option `flexdw` takes, and only those, is in it: give a new option or command its place here |
 
 **Raw images and containers.** `OpenedDisc::attach` gives a raw file a layout of `last track + 1` cylinders, one head,
 `sectors` sectors of 256 bytes from ID 1, so the stored bytes are FLEX's logical sectors in order. A double-density

@@ -147,7 +147,7 @@ then `GAME.CMD`), never `disc.dsk:GAME.CMD`.
   there, or add that folder to your PATH.
 * **macOS:** inside the app, at `Contents/MacOS/flexdw`. To run it from Terminal, make a link:
   `sudo ln -s "/Applications/FLEX Disk Wrangler.app/Contents/MacOS/flexdw" /usr/local/bin/flexdw`
-* **Linux, `.deb`:** `/usr/bin/flexdw`, installed with the program.
+* **Linux, `.deb`:** `/usr/bin/flexdw`, installed with the program, with its manual page: `man flexdw`.
 * **Linux, AppImage:** the AppImage runs the console program when it is started under the name `flexdw`, so make a
   link to it: `ln -s flexdiskwrangler-<version>-linux-x86_64.AppImage flexdw`, then run `./flexdw`.
 
@@ -164,7 +164,9 @@ then `GAME.CMD`), never `disc.dsk:GAME.CMD`.
     flexdw mkdir UNIFLEX.DSK /work            # a UniFLEX directory
     flexdw new NEW.DSK --format=uniflex-ds-dd --title=pack  # a new UniFLEX disc
 
-Add `--json` for output a program can read. The commands are those of the other Disk Wranglers' console programs
+Add `--json` for output a program can read. `flexdw COMMAND --help` lists a command's options; the manual page
+(`man flexdw`, from the `.deb`; [man/flexdw.1](man/flexdw.1) here) describes every command and option. The commands
+are those of the other Disk Wranglers' console programs
 ([cli.md](https://github.com/drdpj/DiskWranglerCore/blob/main/docs/cli.md)).
 
 ## Limitations
