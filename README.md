@@ -48,6 +48,11 @@ Help > About shows the version; Help > Licences shows the licences of the progra
 | FLEX and UniFLEX discs in TeleDisk (`.td0`) files | read; Save As makes a copy that can be changed |
 | OS-9 discs | recognised and named, not opened |
 
+If an ImageDisk file from another program isn't recognised, try
+[`fix_imd_header.py`](https://github.com/drdpj/DiskWranglerCore/blob/main/tools/fix_imd_header.py), a small Python
+script in DiskWranglerCore. It repairs the two faults seen so far: a first line that doesn't start `IMD`, and empty
+junk tracks at the end of the file.
+
 A disc with a broken chain opens read-only with the fault named (Tools > Check disc); a file whose chain is broken is
 shown in red with the reason, and can't be copied out. A file whose size isn't the geometry its System Information
 Record gives opens read-only too.
